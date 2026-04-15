@@ -1,13 +1,14 @@
 import os
 import json
 import asyncio
-from flask import Flask, render_template_string
+from threading import Thread
+from flask import Flask, render_template
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from github import Github
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from threading import Thread
 
 # --- CẤU HÌNH BIẾN MÔI TRƯỜNG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -18,31 +19,22 @@ SHEET_ID = os.getenv("SHEET_ID")
 GOOGLE_CREDS_JSON = os.getenv("GOOGLE_CREDS")
 PORT = int(os.getenv("PORT", 8000))
 
-# --- KHỞI TẠO GOOGLE SHEETS ---
-def get_sheet():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds_dict = json.loads(GOOGLE_CREDS_JSON)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    return client.open_by_key(SHEET_ID)
-
-# --- KHỞI TẠO FLASK (DASHBOARD) ---
+# --- KHỞI TẠO FLASK ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "<h1>System Active</h1><p>Locket Gold & NextDNS Manager is running on Koyeb.</p>"
+    return render_template('index.html')
 
 @app.route('/health')
 def health():
     return "OK", 200
 
-# --- XỬ LÝ LOCKET GOLD (GITHUB API) ---
+# --- LOGIC GITHUB (LOCKET GOLD) ---
 def deploy_locket_module(username):
     g = Github(GH_TOKEN)
     repo = g.get_repo(REPO_NAME)
     
-    # Nội dung script giả lập RevenueCat (Locket Gold)
     js_content = """
     var obj = JSON.parse($response.body);
     obj.subscriber.subscriptions["gold"] = {
@@ -58,57 +50,60 @@ def deploy_locket_module(username):
     """
     
     module_content = f"""#!name=Locket Gold ({username})
-#!desc=Unlock Premium Locket Gold
+#!desc=Unlock Premium Locket Gold vĩnh viễn
 [MITM]
 hostname = api.revenuecat.com
 [Script]
 LocketGold = type=http-response,pattern=^https?:\/\/api\.revenuecat\.com\/v1\/(subscribers|receipts),requires-body=1,script-path=https://raw.githubusercontent.com/{REPO_NAME}/main/locket.js
 """
     
-    # Cập nhật file lên GitHub
     try:
-        repo.update_file("locket.js", "Update Script", js_content, repo.get_contents("locket.js").sha)
-        repo.update_file(f"modules/{username}.sgmodule", f"Create module for {username}", module_content, branch="main")
-    except:
-        repo.create_file("locket.js", "Initial Script", js_content)
-        repo.create_file(f"modules/{username}.sgmodule", f"Initial module for {username}", module_content)
-    
+        # Cập nhật script gốc
+        try:
+            contents = repo.get_contents("locket.js")
+            repo.update_file("locket.js", "Update Script", js_content, contents.sha)
+        except:
+            repo.create_file("locket.js", "Initial Script", js_content)
+            
+        # Tạo file module cá nhân
+        path = f"modules/{username}.sgmodule"
+        repo.create_file(path, f"Create module for {username}", module_content)
+    except Exception as e:
+        print(f"GitHub Error: {e}")
+        
     return f"https://raw.githubusercontent.com/{REPO_NAME}/main/modules/{username}.sgmodule"
 
-# --- TELEGRAM BOT COMMANDS ---
+# --- TELEGRAM BOT HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Hệ thống Locket Gold & NextDNS sẵn sàng!\nSử dụng /get [username] để tạo module.")
+    await update.message.reply_text("🚀 Hệ thống Locket Gold & NextDNS sẵn sàng!\nDùng /get [username] để lấy module.")
 
 async def get_module(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Vui lòng nhập username. VD: /get thanh_trung")
+        await update.message.reply_text("Vui lòng nhập: /get [username]")
         return
     
     username = context.args[0]
-    wait_msg = await update.message.reply_text("⏳ Đang khởi tạo module trên GitHub...")
+    msg = await update.message.reply_text("⏳ Đang xử lý trên GitHub...")
     
     try:
-        raw_url = deploy_locket_module(username)
-        await wait_msg.edit_text(f"✅ Thành công!\nLink Shadowrocket của bạn:\n`{raw_url}`", parse_mode='Markdown')
+        url = deploy_locket_module(username)
+        await msg.edit_text(f"✅ Thành công!\nLink Shadowrocket:\n`{url}`", parse_mode='Markdown')
     except Exception as e:
-        await wait_msg.edit_text(f"❌ Lỗi: {str(e)}")
+        await msg.edit_text(f"❌ Lỗi: {str(e)}")
 
-# --- HÀM CHẠY BOT ---
-def run_bot():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("get", get_module))
-    
-    print("Bot is polling...")
-    application.run_polling()
+# --- RUNNER ---
+def run_flask():
+    app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
-    # Chạy Bot trong một Thread riêng để Flask không bị chặn
-    bot_thread = Thread(target=run_bot)
-    bot_thread.start()
+    # Chạy Flask ở luồng phụ
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
     
-    # Chạy Flask Server cho Koyeb Health Check
-    app.run(host='0.0.0.0', port=PORT)
+    # Chạy Bot ở luồng chính
+    print("Bot is starting...")
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("get", get_module))
+    application.run_polling()
