@@ -176,19 +176,71 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"✅ <b>Link:</b>\n<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>", parse_mode=ParseMode.HTML)
     except Exception as e: await status.edit_text(f"❌ Lỗi: {e}")
 
-async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
+async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 1):
     uid = u.effective_user.id
     is_user_admin = is_admin(uid)
+    
     with sqlite3.connect(DB_PATH) as conn:
+        # Lấy danh sách Modules (giữ nguyên tính năng cũ)
         mods = conn.execute("SELECT key, title FROM modules").fetchall()
         txt = f"<b>📂 DANH SÁCH MODULES ({len(mods)})</b>\n\n"
         txt += "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "📭 Trống."
+        
+        kb = [[InlineKeyboardButton("📂 Danh sách Module", callback_data="show_list")]]
+        
+        # Nếu là Admin, hiển thị danh sách Member phân trang
         if is_user_admin:
-            users = conn.execute("SELECT user_id, username, full_name, last_active FROM users ORDER BY last_active DESC").fetchall()
-            txt += f"\n\n👑 <b>ADMIN DASHBOARD</b>\n👥 Người dùng: {len(users)}\n"
-            txt += "\n".join([f"• <code>{us[0]}</code> | {us[1]} ({us[2]})" for us in users[:20]])
-    await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
-
+            per_page = 10
+            offset = (page - 1) * per_page
+            
+            # Lấy tổng số lượng user để tính số trang
+            total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            total_pages = (total_users + per_page - 1) // per_page
+            
+            users = conn.execute(
+                "SELECT user_id, full_name, username, join_date, interact_count, is_premium, last_active "
+                "FROM users ORDER BY last_active DESC LIMIT ? OFFSET ?", 
+                (per_page, offset)
+            ).fetchall()
+            
+            txt += f"\n\n👑 <b>ADMIN: THÀNH VIÊN (Trang {page}/{total_pages})</b>\n"
+            txt += f"Tổng cộng: {total_users} người dùng\n"
+            txt += "-------------------\n"
+            
+            member_list = []
+            for us in users:
+                status = "💎 Premium" if us[5] == 1 else "🆓 Thành viên"
+                m_info = (f"👤 <b>{us[1]}</b> ({us[2]})\n"
+                          f"🆔 ID: <code>{us[0]}</code>\n"
+                          f"📅 Tham gia: {us[3]}\n"
+                          f"⚡ Tương tác: {us[4]} lần\n"
+                          f"🕒 Cuối: {us[6]}\n"
+                          f"🌟 {status}\n"
+                          f"-------------------")
+                member_list.append(m_info)
+            
+            txt += "\n".join(member_list)
+            
+            # Tạo nút điều hướng trang
+            nav_buttons = []
+            if page > 1:
+                nav_buttons.append(InlineKeyboardButton("⬅️ Trước", callback_data=f"list_page_{page-1}"))
+            if page < total_pages:
+                nav_buttons.append(InlineKeyboardButton("Tiếp ➡️", callback_data=f"list_page_{page+1}"))
+            
+            if nav_buttons:
+                kb.append(nav_buttons)
+        
+        # Thêm các nút chức năng mặc định
+        kb.append([InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("📖 HDSD", callback_data="hdsd")])
+        
+        # Gửi tin nhắn mới hoặc chỉnh sửa tin nhắn cũ nếu là từ nút bấm
+        reply_markup = InlineKeyboardMarkup(kb)
+        if u.callback_query:
+            await u.callback_query.edit_message_text(txt, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            
 # --- ADMIN & PREMIUM ACTIONS ---
 
 async def admin_guide(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -244,10 +296,21 @@ async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # --- CALLBACK & HANDLERS ---
 
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    query = u.callback_query; await query.answer()
-    if query.data == "show_list": await send_module_list(u, c)
-    elif query.data == "profile": await profile(u, c)
-    elif query.data == "hdsd": await hdsd(u, c)
+    query = u.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "show_list":
+        await send_module_list(u, c, page=1)
+    elif data.startswith("list_page_"):
+        # Lấy số trang từ callback_data (ví dụ: list_page_2 -> 2)
+        page = int(data.split("_")[-1])
+        await send_module_list(u, c, page=page)
+    elif data == "profile":
+        await profile(u, c)
+    elif data == "hdsd":
+        await hdsd(u, c)
+        
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text.startswith('/'): return
