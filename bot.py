@@ -97,9 +97,15 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (f"👋 Chào mừng <b>{u.effective_user.first_name}</b>!\n\n"
            f"🚀 <b>Hệ thống NDTT Premium</b>\n"
            f"📂 Database: SQLite Online ✅\n"
-           f"👨‍💻 Admin: @NgDanhThanhTrung")
+           f"👨‍💻 Admin: @NgDanhThanhTrung\n\n"
+           f"📝 <b>Lệnh cơ bản:</b>\n"
+           f"• /list: Xem danh sách Module\n"
+           f"• /get [user] | [ngày]: Tạo Locket Gold\n"
+           f"• /nextdns [ID]: Tạo cấu hình DNS\n"
+           f"• /profile: Xem hồ sơ cá nhân")
     kb = [[InlineKeyboardButton("📂 Danh sách Module", callback_data="show_list")],
-          [InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("📖 HDSD", callback_data="hdsd")]]
+          [InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("📖 HDSD", callback_data="hdsd")],
+          [InlineKeyboardButton("💬 Liên hệ", url=CONTACT_URL), InlineKeyboardButton("☕ Donate", url=DONATE_URL)]]
     target = u.message if u.message else u.callback_query.message
     await target.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
 
@@ -113,7 +119,11 @@ async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def hdsd(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    txt = ("📖 <b>HƯỚNG DẪN SỬ DỤNG</b>\n\n1️⃣ Dùng lệnh /get để tạo module Locket cá nhân.\n2️⃣ Copy link dán vào <b>Surge/Shadowrocket</b>.\n3️⃣ Bật <b>MITM</b> và <b>HTTPS Decryption</b>.")
+    txt = ("📖 <b>HƯỚNG DẪN SỬ DỤNG</b>\n\n"
+           "1️⃣ Dùng lệnh /get để tạo module Locket cá nhân.\n"
+           "2️⃣ Copy link dán vào <b>Surge/Shadowrocket</b>.\n"
+           "3️⃣ Bật <b>MITM</b> và <b>HTTPS Decryption</b>.\n"
+           "⚠️ Lưu ý: Không chia sẻ link cá nhân.")
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def myid(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -123,12 +133,12 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args: return await u.message.reply_text("🛠 Gõ: <code>/nextdns [ID]</code>", parse_mode=ParseMode.HTML)
     dns_id = c.args[0].strip()
     xml = NEXTDNS_CONFIG.format(dns_id=dns_id, uuid1=str(uuid.uuid4()), uuid2=str(uuid.uuid4()))
-    await u.message.reply_text(f"✅ <b>Config:</b>\n<pre>{html.escape(xml)}</pre>", parse_mode=ParseMode.HTML)
+    await u.message.reply_text(f"✅ <b>Cấu hình NextDNS:</b>\n<pre>{html.escape(xml)}</pre>", parse_mode=ParseMode.HTML)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args or "|" not in " ".join(c.args): return await u.message.reply_text("⚠️ Cú pháp: `/get user | yyyy-mm-dd`")
     parts = [p.strip() for p in " ".join(c.args).split("|")]
-    status = await u.message.reply_text("⏳ Đang khởi tạo...")
+    status = await u.message.reply_text("⏳ <b>Đang khởi tạo Module...</b>", parse_mode=ParseMode.HTML)
     try:
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
         js_p, mod_p = f"{parts[0]}/L.js", f"{parts[0]}/L.sgmodule"
@@ -139,7 +149,7 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             try:
                 f = repo.get_contents(p); repo.update_file(p, "Update", cnt, f.sha)
             except: repo.create_file(p, "Create", cnt)
-        await status.edit_text(f"✅ <b>Link:</b>\n<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>", parse_mode=ParseMode.HTML)
+        await status.edit_text(f"✅ <b>TẠO THÀNH CÔNG!</b>\n\n🔗 <b>Link:</b>\n<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>", parse_mode=ParseMode.HTML)
     except Exception as e: await status.edit_text(f"❌ Lỗi: {e}")
 
 async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -148,12 +158,14 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
     with sqlite3.connect(DB_PATH) as conn:
         mods = conn.execute("SELECT key, title FROM modules").fetchall()
         txt = f"<b>📂 DANH SÁCH MODULES ({len(mods)})</b>\n\n"
-        txt += "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "📭 Trống."
+        txt += "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "📭 Hiện chưa có module nào."
         if is_user_admin:
             users = conn.execute("SELECT user_id, username, full_name FROM users").fetchall()
-            txt += f"\n\n👑 <b>ADMIN DASHBOARD</b>\n👥 Người dùng: {len(users)}\n"
+            txt += f"\n\n👑 <b>ADMIN DASHBOARD</b>\n👥 Người dùng: <b>{len(users)}</b>\n\n"
+            txt += "<b>DANH SÁCH CHI TIẾT:</b>\n"
             txt += "\n".join([f"• <code>{us[0]}</code> | {us[1]} ({us[2]})" for us in users])
-    await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
+    target = u.message if u.message else u.callback_query.message
+    await target.reply_text(txt, parse_mode=ParseMode.HTML)
 
 # --- ADMIN & PREMIUM ACTIONS ---
 
@@ -162,8 +174,13 @@ async def admin_guide(u: Update, c: ContextTypes.DEFAULT_TYPE):
     with sqlite3.connect(DB_PATH) as conn:
         prem = conn.execute("SELECT is_premium FROM users WHERE user_id = ?", (uid,)).fetchone()
     if not is_admin(u.effective_user.id) and not (prem and prem[0] == 1):
-        return await u.message.reply_text("❌ Chỉ dành cho Admin/Premium.")
-    txt = "🛠 <b>MENU ADMIN/PREMIUM</b>\n\n• <code>/stats</code>\n• <code>/setlink k|t|l</code>\n• <code>/delmodule k</code>\n• <code>/approve ID</code>\n• <code>/broadcast msg</code>"
+        return await u.message.reply_text("❌ Lệnh này chỉ dành cho Admin và Premium.")
+    txt = ("🛠 <b>MENU ADMIN/PREMIUM</b>\n\n"
+           "• <code>/stats</code>: Thống kê\n"
+           "• <code>/setlink k|t|l</code>: Thêm module\n"
+           "• <code>/delmodule k</code>: Xóa module\n"
+           "• <code>/approve ID</code>: Duyệt Premium\n"
+           "• <code>/broadcast msg</code>: Thông báo")
     await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -190,20 +207,20 @@ async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
     for user in users:
         try: await c.bot.send_message(user[0], f"📢 <b>THÔNG BÁO:</b>\n\n{msg}", parse_mode=ParseMode.HTML); count += 1
         except: pass
-    await u.message.reply_text(f"✅ Gửi thành công {count} người.")
+    await u.message.reply_text(f"✅ Đã gửi thành công {count} người.")
 
 async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     with sqlite3.connect(DB_PATH) as conn:
         u_c = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         m_c = conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
-    await u.message.reply_text(f"📊 <b>Thống kê:</b> {u_c} users, {m_c} modules")
+    await u.message.reply_text(f"📊 <b>THỐNG KÊ:</b>\n👤 Users: {u_c}\n📦 Modules: {m_c}", parse_mode=ParseMode.HTML)
 
 async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (c.args[0],)); conn.commit()
-    await u.message.reply_text(f"✅ Đã duyệt Premium cho: {c.args[0]}")
+    await u.message.reply_text(f"✅ Đã duyệt Premium cho: <code>{c.args[0]}</code>", parse_mode=ParseMode.HTML)
 
 # --- CALLBACK & HANDLERS ---
 
@@ -220,9 +237,13 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if cmd in sys_cmds: return
     with sqlite3.connect(DB_PATH) as conn:
         res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
-    if res: await u.message.reply_text(f"✨ <b>{res[0]}</b>\n\n🔗 <code>{res[1]}</code>", parse_mode=ParseMode.HTML)
+    if res:
+        guide = (f"✨ <b>MODULE: {res[0].upper()}</b>\n\n"
+                 f"🔗 <b>Link:</b>\n<code>{res[1]}</code>\n\n"
+                 f"👉 <i>Dán vào Shadowrocket/Surge để sử dụng.</i>")
+        await u.message.reply_text(guide, parse_mode=ParseMode.HTML)
 
-# --- FLASK ---
+# --- FLASK SERVER ---
 server = Flask(__name__)
 @server.route('/')
 def home(): return "NDTT System Active ✅"
@@ -236,8 +257,8 @@ def api_gen():
         js_c = JS_TEMPLATE.format(user=u, date=d)
         mod_c = MODULE_TEMPLATE.format(user=u, js_url=f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}")
         for p, cnt in [(js_p, js_c), (mod_p, mod_c)]:
-            try: f = repo.get_contents(p); repo.update_file(p, "API", cnt, f.sha)
-            except: repo.create_file(p, "API", cnt)
+            try: f = repo.get_contents(p); repo.update_file(p, "API Update", cnt, f.sha)
+            except: repo.create_file(p, "API Create", cnt)
         return jsonify({"success": True, "url": f"https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}"})
     except Exception as e: return jsonify({"success": False, "error": str(e)})
 
@@ -247,7 +268,7 @@ def api_dns():
     xml = NEXTDNS_CONFIG.format(dns_id=d_id, uuid1=str(uuid.uuid4()), uuid2=str(uuid.uuid4()))
     return jsonify({"success": True, "config": xml})
 
-# --- MAIN ---
+# --- MAIN START ---
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "🏠 Bắt đầu"), BotCommand("profile", "👤 Hồ sơ"),
@@ -259,6 +280,7 @@ async def post_init(application):
 if __name__ == "__main__":
     threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("hdsd", hdsd))
@@ -272,7 +294,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("delmodule", del_mod))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("approve", approve_user))
+    
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.COMMAND, dynamic_module_handler))
-    print("--- SYSTEM STARTED ---")
+    
+    print("--- NDTT SYSTEM STARTED ---")
     app.run_polling(drop_pending_updates=True)
