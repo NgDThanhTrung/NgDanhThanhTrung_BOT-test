@@ -14,7 +14,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    TypeHandler,
+    TypeHandler, # Tính năng mới để đánh chặn tương tác
     filters
 )
 from flask import Flask, render_template, request, jsonify
@@ -41,7 +41,7 @@ def init_db():
             username TEXT,
             join_date TEXT,
             last_active TEXT,
-            interact_count INTEGER DEFAULT 1,
+            interact_count INTEGER DEFAULT 0,
             is_premium INTEGER DEFAULT 0
         )''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS modules (
@@ -65,12 +65,12 @@ def is_admin(user_id: int) -> bool:
         return res is not None
 
 async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
-    """
-    TÍNH NĂNG MỚI: Tối ưu quản lý người dùng.
-    Cập nhật lại mọi thông tin (trừ ID) mỗi khi có tương tác.
-    """
     user = u.effective_user
     if not user or user.is_bot: return
+    
+    # --- ĐIỀU KIỆN MỚI ---
+    # Chỉ tăng tương tác nếu là tin nhắn văn bản và bắt đầu bằng dấu /
+    is_command = u.message and u.message.text and u.message.text.startswith('/')
     
     uid = str(user.id)
     uname = (f"@{user.username}" if user.username else "N/A")
@@ -78,16 +78,27 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     with sqlite3.connect(DB_PATH) as conn:
-        # Sử dụng logic ON CONFLICT để cập nhật thông tin mới nhất dựa trên ID cố định
-        conn.execute('''
-            INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
-            VALUES (?, ?, ?, ?, ?, 1)
-            ON CONFLICT(user_id) DO UPDATE SET 
-                full_name = excluded.full_name,
-                username = excluded.username,
-                last_active = excluded.last_active,
-                interact_count = interact_count + 1
-        ''', (uid, fname, uname, now, now))
+        if is_command:
+            # Nếu là lệnh: Tăng interact_count + 1
+            conn.execute('''
+                INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
+                VALUES (?, ?, ?, ?, ?, 1)
+                ON CONFLICT(user_id) DO UPDATE SET 
+                    full_name = excluded.full_name,
+                    username = excluded.username,
+                    last_active = excluded.last_active,
+                    interact_count = users.interact_count + 1
+            ''', (uid, fname, uname, now, now))
+        else:
+            # Nếu KHÔNG phải lệnh (như bấm nút): Chỉ cập nhật thông tin và ngày hoạt động, KHÔNG tăng đếm
+            conn.execute('''
+                INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
+                VALUES (?, ?, ?, ?, ?, 0)
+                ON CONFLICT(user_id) DO UPDATE SET 
+                    full_name = excluded.full_name,
+                    username = excluded.username,
+                    last_active = excluded.last_active
+            ''', (uid, fname, uname, now, now))
         conn.commit()
 
 # --- TEMPLATES ---
@@ -110,7 +121,6 @@ NEXTDNS_CONFIG = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 # --- BOT HANDLERS ---
 
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     txt = (f"👋 Chào mừng <b>{u.effective_user.first_name}</b>!\n\n"
            f"🚀 <b>Hệ thống NDTT Premium</b>\n"
            f"📂 Database: SQLite Online ✅\n"
@@ -122,7 +132,6 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await target.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
 
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     uid = str(u.effective_user.id)
     with sqlite3.connect(DB_PATH) as conn:
         user = conn.execute("SELECT join_date, interact_count, is_premium, last_active FROM users WHERE user_id = ?", (uid,)).fetchone()
@@ -131,29 +140,25 @@ async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (f"👤 <b>HỒ SƠ CỦA BẠN</b>\n\n"
            f"🆔 ID: <code>{uid}</code>\n"
            f"📅 Tham gia: {user[0]}\n"
-           f"⚡ Tương tác: {user[1]} lần\n"
-           f"🕒 Cập nhật cuối: {user[3]}\n"
+           f"⚡ Tương tác: <b>{user[1]} lần</b>\n"
+           f"🕒 Hoạt động cuối: {user[3]}\n"
            f"🌟 Trạng thái: <b>{status}</b>")
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def hdsd(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     txt = ("📖 <b>HƯỚNG DẪN SỬ DỤNG</b>\n\n1️⃣ Dùng lệnh /get để tạo module Locket cá nhân.\n2️⃣ Copy link dán vào <b>Surge/Shadowrocket</b>.\n3️⃣ Bật <b>MITM</b> và <b>HTTPS Decryption</b>.")
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def myid(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     await u.message.reply_text(f"🆔 ID của bạn là: <code>{u.effective_user.id}</code>", parse_mode=ParseMode.HTML)
 
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not c.args: return await u.message.reply_text("🛠 Gõ: <code>/nextdns [ID]</code>", parse_mode=ParseMode.HTML)
     dns_id = c.args[0].strip()
     xml = NEXTDNS_CONFIG.format(dns_id=dns_id, uuid1=str(uuid.uuid4()), uuid2=str(uuid.uuid4()))
     await u.message.reply_text(f"✅ <b>Config:</b>\n<pre>{html.escape(xml)}</pre>", parse_mode=ParseMode.HTML)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not c.args or "|" not in " ".join(c.args): return await u.message.reply_text("⚠️ Cú pháp: `/get user | yyyy-mm-dd`")
     parts = [p.strip() for p in " ".join(c.args).split("|")]
     status = await u.message.reply_text("⏳ Đang khởi tạo...")
@@ -171,7 +176,6 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except Exception as e: await status.edit_text(f"❌ Lỗi: {e}")
 
 async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     uid = u.effective_user.id
     is_user_admin = is_admin(uid)
     with sqlite3.connect(DB_PATH) as conn:
@@ -179,16 +183,14 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
         txt = f"<b>📂 DANH SÁCH MODULES ({len(mods)})</b>\n\n"
         txt += "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "📭 Trống."
         if is_user_admin:
-            # Sắp xếp theo người dùng hoạt động mới nhất
             users = conn.execute("SELECT user_id, username, full_name, last_active FROM users ORDER BY last_active DESC").fetchall()
             txt += f"\n\n👑 <b>ADMIN DASHBOARD</b>\n👥 Người dùng: {len(users)}\n"
-            txt += "\n".join([f"• <code>{us[0]}</code> | {us[1]} ({us[2]})" for us in users[:20]]) # Hiển thị 20 người mới nhất
+            txt += "\n".join([f"• <code>{us[0]}</code> | {us[1]} ({us[2]})" for us in users[:20]])
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 # --- ADMIN & PREMIUM ACTIONS ---
 
 async def admin_guide(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     uid = str(u.effective_user.id)
     with sqlite3.connect(DB_PATH) as conn:
         prem = conn.execute("SELECT is_premium FROM users WHERE user_id = ?", (uid,)).fetchone()
@@ -198,7 +200,6 @@ async def admin_guide(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not is_admin(u.effective_user.id): return
     try:
         k, t, l = [p.strip() for p in " ".join(c.args).split("|")]
@@ -208,14 +209,12 @@ async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except: await u.message.reply_text("⚠️ `/setlink k | t | l`")
 
 async def del_mod(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not is_admin(u.effective_user.id) or not c.args: return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("DELETE FROM modules WHERE key = ?", (c.args[0].lower(),)); conn.commit()
     await u.message.reply_text(f"🗑 Đã xóa: {c.args[0]}")
 
 async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not is_admin(u.effective_user.id): return
     msg = " ".join(c.args)
     if not msg: return
@@ -227,18 +226,15 @@ async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(f"✅ Gửi thành công {count} người.")
 
 async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not is_admin(u.effective_user.id): return
     with sqlite3.connect(DB_PATH) as conn:
         u_c = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         m_c = conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
-        # Thống kê thêm người dùng hoạt động trong hôm nay
         today = datetime.now().strftime("%Y-%m-%d")
         active_today = conn.execute("SELECT COUNT(*) FROM users WHERE last_active LIKE ?", (f"{today}%",)).fetchone()[0]
     await u.message.reply_text(f"📊 <b>Thống kê:</b>\n👤 Tổng User: {u_c}\n📦 Tổng Module: {m_c}\n⚡ Hoạt động hôm nay: {active_today}", parse_mode=ParseMode.HTML)
 
 async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not is_admin(u.effective_user.id) or not c.args: return
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (c.args[0],)); conn.commit()
@@ -247,15 +243,12 @@ async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
 # --- CALLBACK & HANDLERS ---
 
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Cập nhật thông tin ngay cả khi bấm nút
-    await db_auto_reg(u)
     query = u.callback_query; await query.answer()
     if query.data == "show_list": await send_module_list(u, c)
     elif query.data == "profile": await profile(u, c)
     elif query.data == "hdsd": await hdsd(u, c)
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await db_auto_reg(u)
     if not u.message or not u.message.text.startswith('/'): return
     cmd = u.message.text.split()[0][1:].lower()
     sys_cmds = ['start', 'profile', 'get', 'nextdns', 'hdsd', 'broadcast', 'approve', 'stats', 'setlink', 'delmodule', 'list', 'myid', 'admin']
@@ -302,7 +295,7 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
     
-    # Tính năng mới: Tự động cập nhật thông tin cho mọi tương tác (Middleware)
+    # Đăng ký Middleware ở group=-1 để chạy trước mọi Handler khác
     app.add_handler(TypeHandler(Update, db_auto_reg), group=-1)
 
     app.add_handler(CommandHandler("start", start))
