@@ -20,6 +20,7 @@ from telegram.ext import (
 )
 from flask import Flask, request, jsonify
 
+# --- CONFIGURATION ---
 ROOT_ADMIN_ID = 7346983056 
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
 GH_TOKEN = os.getenv("GH_TOKEN")
@@ -27,11 +28,14 @@ REPO_NAME = "NgDanhThanhTrung/locket_"
 PORT = int(os.getenv("PORT", "8000"))
 CONTACT_URL = "https://t.me/NgDanhThanhTrung"
 DONATE_URL = "https://ngdanhthanhtrung.github.io/Bank/"
+# Thêm biến URL Dashboard mới như các phiên bản trước bạn yêu cầu
+KOYEB_URL = "https://colourful-carilyn-ngdanhthanhtrung-1cfbab15.koyeb.app/"
 VN_TZ = timezone(timedelta(hours=7))
 
 logging.basicConfig(level=logging.INFO)
 DB_PATH = "data_system.db"
 
+# --- DATABASE SETUP ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -57,6 +61,7 @@ def init_db():
 
 init_db()
 
+# --- HELPERS ---
 def is_admin(user_id: int) -> bool:
     if user_id == ROOT_ADMIN_ID: return True
     with sqlite3.connect(DB_PATH) as conn:
@@ -66,9 +71,7 @@ def is_admin(user_id: int) -> bool:
 async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
     user = u.effective_user
     if not user or user.is_bot: return
-    uid = str(user.id)
-    uname = (f"@{user.username}" if user.username else "N/A")
-    fname = user.full_name
+    uid, uname, fname = str(user.id), (f"@{user.username}" if user.username else "N/A"), user.full_name
     now = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
     is_command = bool(u.message and u.message.text and u.message.text.startswith('/'))
     with sqlite3.connect(DB_PATH) as conn:
@@ -83,31 +86,68 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
         ''', (uid, fname, uname, now, now, (1 if is_command else 0), (1 if is_command else 0)))
         conn.commit()
 
+async def send_ui(u: Update, text: str, kb: list):
+    """Hàm xử lý UI thông minh: Sửa tin cũ nếu bấm nút, gửi mới nếu gõ lệnh. Bật Preview Web."""
+    reply_markup = InlineKeyboardMarkup(kb)
+    if u.callback_query:
+        await u.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup, disable_web_page_preview=False)
+    else:
+        await u.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup, disable_web_page_preview=False)
+
+# --- TEMPLATES ---
 JS_TEMPLATE = """const mapping = {{ '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip', 'watch_vip'], 'Locket': ['Gold', 'com.{user}.premium.yearly'] }};
 const ua = $request.headers["User-Agent"] || $request.headers["user-agent"];
 let obj = JSON.parse($response.body);
 obj.subscriber = obj.subscriber || {{}};
-const premiumInfo = {{ is_sandbox: false, ownership_type: "PURCHASED", expires_date: "2999-12-18T01:04:17Z", purchase_date: "{date}T01:04:17Z", store: "app_store" }};
-const entitlementInfo = {{ purchase_date: "{date}T01:04:17Z", product_identifier: "com.{user}.premium.yearly", expires_date: "2999-12-18T01:04:17Z" }};
-obj.subscriber.subscriptions["com.{user}.premium.yearly"] = premiumInfo;
-obj.subscriber.entitlements["Gold"] = entitlementInfo;
+obj.subscriber.entitlements = obj.subscriber.entitlements || {{}};
+obj.subscriber.subscriptions = obj.subscriber.subscriptions || {{}};
+const pInfo = {{ is_sandbox: false, ownership_type: "PURCHASED", expires_date: "2999-12-18T01:04:17Z", purchase_date: "{date}T01:04:17Z", store: "app_store" }};
+const eInfo = {{ purchase_date: "{date}T01:04:17Z", product_identifier: "com.{user}.premium.yearly", expires_date: "2999-12-18T01:04:17Z" }};
+const match = Object.keys(mapping).find(e => ua.includes(e));
+if (match) {{
+  let [entKey, subKey] = mapping[match];
+  let finalSubKey = subKey || "com.{user}.premium.yearly";
+  eInfo.product_identifier = finalSubKey;
+  obj.subscriber.subscriptions[finalSubKey] = pInfo;
+  obj.subscriber.entitlements[entKey] = eInfo;
+}} else {{
+  obj.subscriber.subscriptions["com.{user}.premium.yearly"] = pInfo;
+  obj.subscriber.entitlements["Gold"] = eInfo;
+}}
 $done({{ body: JSON.stringify(obj) }});"""
 
-MODULE_TEMPLATE = """#!name=Locket-Gold ({user})\n#!desc=Crack By NgDanhThanhTrung\n[Script]\nrevenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts$|subscribers\\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60\n[MITM]\nhostname = %APPEND% api.revenuecat.com"""
+MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
+#!desc=Crack By NgDanhThanhTrung
+[Script]
+revenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts$|subscribers\\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60
+deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/locket_/main/Locket_NDTT/deleteHeader.js, timeout=60
+[MITM]
+hostname = %APPEND% api.revenuecat.com"""
 
 NEXTDNS_CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>PayloadContent</key><array><dict><key>DNSSettings</key><dict><key>DNSProtocol</key><string>HTTPS</string><key>ServerURL</key><string>https://apple.nextdns.io/{dns_id}</string></dict><key>PayloadIdentifier</key><string>com.nextdns.dns.{dns_id}</string><key>PayloadType</key><string>com.apple.dnsSettings.managed</string><key>PayloadUUID</key><string>{uuid1}</string><key>PayloadVersion</key><integer>1</integer></dict></array><key>PayloadDisplayName</key><string>NextDNS ({dns_id})</string><key>PayloadIdentifier</key><string>com.nextdns.config.{dns_id}</string><key>PayloadType</key><string>Configuration</string><key>PayloadUUID</key><string>{uuid2}</string><key>PayloadVersion</key><integer>1</integer></dict></plist>"""
 
+# --- HANDLERS ---
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    txt = (f"👋 Chào mừng <b>{u.effective_user.first_name}</b>!\n\n"
-           f"🚀 <b>Hệ thống NDTT Premium</b>\n"
-           f"📂 Database: NgDanhThanhTrung_BOT Online ✅\n"
-           f"👨‍💻 Admin: @NgDanhThanhTrung")
+    txt = (
+        f"👋 Chào mừng <b>{u.effective_user.first_name}</b> đến với <b>@NgDanhThanhTrung_BOT</b>!\n\n"
+        f"🚀 <b>Tính năng chính:</b>\n"
+        f"🔹 Hỗ trợ tạo Module Shadowrocket cá nhân hóa.\n"
+        f"🔹 Tự động kích hoạt script Locket Gold vĩnh viễn.\n"
+        f"🔹 Dashboard Web mượt mà, dễ sử dụng.\n\n"
+        f"🌐 <b>Web Dashboard:</b>\n"
+        f"<code>{KOYEB_URL}</code>\n\n"
+        f"📝 <b>Hướng dẫn:</b>\n"
+        f"• Nhấn nút <b>Danh sách Module</b> bên dưới để xem script.\n"
+        f"• Gõ <code>/get Tên | Ngày</code> để tạo script riêng.\n"
+        f"• Gõ /hdsd để xem cách cài đặt <b>HTTPS Decryption</b>.\n\n"
+        f"👨‍💻 <b>Admin:</b> @NgDanhThanhTrung"
+    )
     kb = [[InlineKeyboardButton("📂 Danh sách Module", callback_data="show_list")],
           [InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("💰 Donate", callback_data="donate_info")],
           [InlineKeyboardButton("📖 HDSD", callback_data="hdsd"), InlineKeyboardButton("💬 Liên hệ Admin", url=CONTACT_URL)]]
-    await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
+    await send_ui(u, txt, kb)
 
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
@@ -117,18 +157,16 @@ async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     status = "💎 Premium" if user[2] == 1 else "🆓 Thành viên"
     txt = (f"👤 <b>HỒ SƠ CỦA BẠN</b>\n\n🆔 ID: <code>{uid}</code>\n📅 Tham gia: {user[0]}\n"
            f"⚡ Tương tác: {user[1]} lần\n🕒 Cuối: {user[3]}\n🌟 Trạng thái: <b>{status}</b>")
-    await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
+    kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
+    await send_ui(u, txt, kb)
 
 async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = ("💰 <b>ỦNG HỘ PHÁT TRIỂN (DONATE)</b>\n\n"
            "Nếu bạn thấy hệ thống hữu ích, hãy mời Admin một ly cà phê nhé!\n"
            "Mọi sự ủng hộ đều giúp hệ thống duy trì ổn định hơn. ❤️")
-    kb = [[InlineKeyboardButton("💳 Ngân hàng / MOMO", url=DONATE_URL)],
+    kb = [[InlineKeyboardButton("💳 Ngân hàng ", url=DONATE_URL)],
           [InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
-    if u.callback_query:
-        await u.callback_query.edit_message_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
-    else:
-        await u.message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
+    await send_ui(u, txt, kb)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args or "|" not in " ".join(c.args): return await u.message.reply_text("⚠️ Cú pháp: `/get user | yyyy-mm-dd`")
@@ -153,6 +191,7 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     xml = NEXTDNS_CONFIG.format(dns_id=dns_id, uuid1=str(uuid.uuid4()), uuid2=str(uuid.uuid4()))
     await u.message.reply_text(f"✅ <b>Cấu hình NextDNS:</b>\n<pre>{html.escape(xml)}</pre>", parse_mode=ParseMode.HTML)
 
+# --- ADMIN FUNCTIONS ---
 async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     txt = ("🛠 <b>BẢNG ĐIỀU KHIỂN ADMIN</b>\n\n"
@@ -162,7 +201,8 @@ async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
            "• <code>/broadcast [nội dung]</code> - Gửi thông báo\n"
            "• <code>/setlink key | title | url</code> - Thêm module\n"
            "• <code>/delmodule key</code> - Xóa module")
-    await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
+    kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
+    await send_ui(u, txt, kb)
 
 async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
@@ -233,6 +273,7 @@ async def del_mod(u: Update, c: ContextTypes.DEFAULT_TYPE):
         conn.commit()
     await u.message.reply_text(f"🗑 Đã xóa module: {key}")
 
+# --- LIST & CALLBACKS ---
 async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 1):
     uid = u.effective_user.id
     is_user_admin = is_admin(uid)
@@ -254,9 +295,12 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
             if page < total_pages: nav.append(InlineKeyboardButton("➡️", callback_data=f"list_page_{page+1}"))
             if nav: kb.append(nav)
     kb.append([InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")])
-    reply_markup = InlineKeyboardMarkup(kb)
-    if u.callback_query: await u.callback_query.edit_message_text(txt, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-    else: await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    await send_ui(u, txt, kb)
+
+async def hdsd_ui(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    txt = "📖 <b>HDSD:</b>\n1. <code>/get user | date</code>\n2. Cài Module vào Surge/Shadowrocket.\n3. Bật MITM."
+    kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
+    await send_ui(u, txt, kb)
 
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query; await query.answer()
@@ -265,7 +309,7 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif query.data == "profile": await profile(u, c)
     elif query.data == "donate_info": await donate_info(u, c)
     elif query.data == "back_start": await start(u, c)
-    elif query.data == "hdsd": await u.effective_message.reply_text("📖 <b>HDSD:</b>\n1. <code>/get user | date</code>\n2. Cài Module vào Surge/Shadowrocket.\n3. Bật MITM.", parse_mode=ParseMode.HTML)
+    elif query.data == "hdsd": await hdsd_ui(u, c)
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text.startswith('/'): return
@@ -276,6 +320,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
     if res: await u.message.reply_text(f"✨ <b>{res[0]}</b>\n🔗 <code>{res[1]}</code>", parse_mode=ParseMode.HTML)
 
+# --- WEB SERVER ---
 server = Flask(__name__)
 @server.route('/')
 def home(): return "Bot Online ✅"
@@ -288,6 +333,7 @@ async def post_init(application):
         BotCommand("admin", "🛠 Menu Admin")
     ])
 
+# --- MAIN ---
 if __name__ == "__main__":
     threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
@@ -305,7 +351,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("setlink", set_link))
     app.add_handler(CommandHandler("delmodule", del_mod))
-    app.add_handler(CommandHandler("hdsd", callback_handler))
+    app.add_handler(CommandHandler("hdsd", hdsd_ui))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.COMMAND, dynamic_module_handler))
     app.run_polling(drop_pending_updates=True)
