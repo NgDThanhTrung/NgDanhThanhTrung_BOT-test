@@ -1,6 +1,7 @@
 import os, json, logging, threading, asyncio, sqlite3, uuid, html
 from datetime import datetime
 from github import Github
+from datetime import datetime, timedelta, timezone
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -65,24 +66,22 @@ def is_admin(user_id: int) -> bool:
         return res is not None
 
 async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
-    """
-    TÍNH NĂNG: Tự động cập nhật thông tin.
-    CHỈ TĂNG ĐẾM KHI SỬ DỤNG LỆNH (COMMAND).
-    """
     user = u.effective_user
     if not user or user.is_bot: return
     
     uid = str(user.id)
     uname = (f"@{user.username}" if user.username else "N/A")
     fname = user.full_name
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # --- LẤY GIỜ VIỆT NAM ---
+    vietnam_tz = timezone(timedelta(hours=7))
+    now = datetime.now(vietnam_tz).strftime("%Y-%m-%d %H:%M:%S")
+    # ------------------------
 
-    # Kiểm tra xem tương tác có phải là Lệnh hay không
     is_command = bool(u.message and u.message.text and u.message.text.startswith('/'))
     
     with sqlite3.connect(DB_PATH) as conn:
         if is_command:
-            # Nếu dùng lệnh: Cập nhật thông tin + Tăng interact_count
             conn.execute('''
                 INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
                 VALUES (?, ?, ?, ?, ?, 1)
@@ -93,7 +92,6 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
                     interact_count = interact_count + 1
             ''', (uid, fname, uname, now, now))
         else:
-            # Nếu chỉ bấm nút hoặc nhắn tin: Chỉ cập nhật thông tin, giữ nguyên interact_count
             conn.execute('''
                 INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
                 VALUES (?, ?, ?, ?, ?, 0)
