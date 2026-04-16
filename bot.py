@@ -14,7 +14,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
-    TypeHandler, # Tính năng mới để đánh chặn tương tác
+    TypeHandler,
     filters
 )
 from flask import Flask, render_template, request, jsonify
@@ -65,21 +65,24 @@ def is_admin(user_id: int) -> bool:
         return res is not None
 
 async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
+    """
+    TÍNH NĂNG: Tự động cập nhật thông tin.
+    CHỈ TĂNG ĐẾM KHI SỬ DỤNG LỆNH (COMMAND).
+    """
     user = u.effective_user
     if not user or user.is_bot: return
-    
-    # --- ĐIỀU KIỆN MỚI ---
-    # Chỉ tăng tương tác nếu là tin nhắn văn bản và bắt đầu bằng dấu /
-    is_command = u.message and u.message.text and u.message.text.startswith('/')
     
     uid = str(user.id)
     uname = (f"@{user.username}" if user.username else "N/A")
     fname = user.full_name
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Kiểm tra xem tương tác có phải là Lệnh hay không
+    is_command = bool(u.message and u.message.text and u.message.text.startswith('/'))
     
     with sqlite3.connect(DB_PATH) as conn:
         if is_command:
-            # Nếu là lệnh: Tăng interact_count + 1
+            # Nếu dùng lệnh: Cập nhật thông tin + Tăng interact_count
             conn.execute('''
                 INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
                 VALUES (?, ?, ?, ?, ?, 1)
@@ -87,10 +90,10 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
                     full_name = excluded.full_name,
                     username = excluded.username,
                     last_active = excluded.last_active,
-                    interact_count = users.interact_count + 1
+                    interact_count = interact_count + 1
             ''', (uid, fname, uname, now, now))
         else:
-            # Nếu KHÔNG phải lệnh (như bấm nút): Chỉ cập nhật thông tin và ngày hoạt động, KHÔNG tăng đếm
+            # Nếu chỉ bấm nút hoặc nhắn tin: Chỉ cập nhật thông tin, giữ nguyên interact_count
             conn.execute('''
                 INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count) 
                 VALUES (?, ?, ?, ?, ?, 0)
@@ -140,7 +143,7 @@ async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (f"👤 <b>HỒ SƠ CỦA BẠN</b>\n\n"
            f"🆔 ID: <code>{uid}</code>\n"
            f"📅 Tham gia: {user[0]}\n"
-           f"⚡ Tương tác: <b>{user[1]} lần</b>\n"
+           f"⚡ Số lệnh đã dùng: {user[1]} lần\n"
            f"🕒 Hoạt động cuối: {user[3]}\n"
            f"🌟 Trạng thái: <b>{status}</b>")
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
@@ -295,7 +298,7 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
     
-    # Đăng ký Middleware ở group=-1 để chạy trước mọi Handler khác
+    # Middleware đếm tương tác tự động
     app.add_handler(TypeHandler(Update, db_auto_reg), group=-1)
 
     app.add_handler(CommandHandler("start", start))
