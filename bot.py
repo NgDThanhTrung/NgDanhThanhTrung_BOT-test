@@ -226,16 +226,19 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 # --- CALLBACK & MESSAGE HANDLER ---
 
-async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    query = u.callback_query
-    await query.answer()
-    if query.data == "show_list":
-        with sqlite3.connect(DB_PATH) as conn:
-            mods = conn.execute("SELECT key, title FROM modules").fetchall()
-        msg = "📂 <b>DANH SÁCH MODULE:</b>\n\n" + "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "Trống."
-        await query.message.reply_text(msg, parse_mode=ParseMode.HTML)
-    elif query.data == "profile": await profile(u, c)
-    elif query.data == "hdsd": await hdsd(u, c)
+# Đảm bảo hàm này tồn tại và truy vấn đúng bảng 'modules'
+async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    with sqlite3.connect(DB_PATH) as conn:
+        # Lưu ý: bảng phải là 'modules', nếu bạn đặt tên bảng khác sẽ lỗi
+        mods = conn.execute("SELECT key, title FROM modules").fetchall()
+    
+    if not mods:
+        await u.effective_message.reply_text("📭 Danh sách module trống. Admin hãy dùng /setlink để thêm.")
+        return
+
+    txt = "<b>📂 DANH SÁCH MODULE:</b>\n\n" + "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods])
+    await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
+    
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text.startswith('/'): return
@@ -283,7 +286,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("hdsd", hdsd))
     app.add_handler(CommandHandler("nextdns", get_nextdns))
     app.add_handler(CommandHandler("get", get_bundle))
-    app.add_handler(CommandHandler("list", lambda u, c: callback_handler(u, c))) # shortcut cho callback
+    app.add_handler(CommandHandler("list", send_module_list))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("approve", approve_user))
     app.add_handler(CommandHandler("stats", stats))
