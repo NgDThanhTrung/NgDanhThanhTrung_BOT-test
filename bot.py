@@ -1,4 +1,4 @@
-import os, json, logging, threading, asyncio, sqlite3
+import os, json, logging, threading, asyncio, sqlite3, uuid, html
 from datetime import datetime
 from github import Github
 from telegram import (
@@ -35,7 +35,6 @@ DB_PATH = "data_system.db"
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        # Bảng người dùng & Premium
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             full_name TEXT,
@@ -44,13 +43,11 @@ def init_db():
             interact_count INTEGER DEFAULT 1,
             is_premium INTEGER DEFAULT 0
         )''')
-        # Bảng danh sách module
         cursor.execute('''CREATE TABLE IF NOT EXISTS modules (
             key TEXT PRIMARY KEY,
             title TEXT,
-            link TEXT
+            url TEXT
         )''')
-        # Bảng phụ tá Admin
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
             user_id TEXT PRIMARY KEY,
             added_at TEXT
@@ -90,6 +87,10 @@ $done({{ body: JSON.stringify(obj) }});"""
 
 MODULE_TEMPLATE = """#!name=Locket-Gold ({user})\n#!desc=Crack By NgDanhThanhTrung\n[Script]\nrevenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts$|subscribers\\/[^/]+$), script-path={js_url}, requires-body=true, max-size=-1, timeout=60\n[MITM]\nhostname = %APPEND% api.revenuecat.com"""
 
+NEXTDNS_CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>PayloadContent</key><array><dict><key>DNSSettings</key><dict><key>DNSProtocol</key><string>HTTPS</string><key>ServerURL</key><string>https://apple.nextdns.io/{dns_id}</string></dict><key>PayloadIdentifier</key><string>com.nextdns.dns.{dns_id}</string><key>PayloadType</key><string>com.apple.dnsSettings.managed</string><key>PayloadUUID</key><string>{uuid1}</string><key>PayloadVersion</key><integer>1</integer></dict></array><key>PayloadDisplayName</key><string>NextDNS ({dns_id})</string><key>PayloadIdentifier</key><string>com.nextdns.config.{dns_id}</string><key>PayloadType</key><string>Configuration</string><key>PayloadUUID</key><string>{uuid2}</string><key>PayloadVersion</key><integer>1</integer></dict></plist>"""
+
 # --- BOT COMMANDS ---
 
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -128,11 +129,27 @@ async def hdsd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.effective_message.reply_text(txt, parse_mode=ParseMode.HTML)
 
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    txt = ("🌐 <b>CẤU HÌNH NEXTDNS</b>\n\n"
-           "Bạn có thể sử dụng ID NextDNS chung của hệ thống:\n"
-           "• ID: <code>ndtt-dns</code>\n"
-           "• Link: <code>https://apple.nextdns.io/ndtt-dns</code>")
-    await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
+    if not c.args:
+        guide = (
+            "🛠 <b>HƯỚNG DẪN TẠO NEXTDNS:</b>\n\n"
+            "👉 Để lấy mã cấu hình, gõ: <code>/nextdns [ID_của_bạn]</code>\n"
+            "<i>Ví dụ: /nextdns ndtt-dns</i>"
+        )
+        return await u.message.reply_text(guide, parse_mode=ParseMode.HTML)
+
+    dns_id = c.args[0].strip()
+    xml_content = NEXTDNS_CONFIG.format(
+        dns_id=dns_id,
+        uuid1=str(uuid.uuid4()),
+        uuid2=str(uuid.uuid4())
+    )
+    safe_xml = html.escape(xml_content)
+    
+    msg = (f"✅ <b>Mã cấu hình cho ID:</b> <code>{dns_id}</code>\n\n"
+           f"👇 Copy đoạn code bên dưới dán vào ứng dụng Ghi chú, sau đó Chia sẻ qua Shortcuts NextDNS:\n\n"
+           f"<pre>{safe_xml}</pre>")
+    
+    await u.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args or "|" not in " ".join(c.args):
@@ -157,14 +174,32 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 # --- ADMIN ACTIONS ---
 
+async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(u.effective_user.id): return
+    try:
+        raw = " ".join(c.args)
+        k, t, l = [p.strip() for p in raw.split("|")]
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("INSERT OR REPLACE INTO modules (key, title, url) VALUES (?, ?, ?)", (k.lower(), t, l))
+            conn.commit()
+        await u.message.reply_text(f"✅ Đã lưu module: <b>{t}</b>", parse_mode=ParseMode.HTML)
+    except:
+        await u.message.reply_text("⚠️ Cú pháp: `/setlink key | Tên | URL`")
+
+async def del_mod(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(u.effective_user.id) or not c.args: return
+    key = c.args[0].lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM modules WHERE key = ?", (key,))
+        conn.commit()
+    await u.message.reply_text(f"🗑 Đã xóa module: <b>{key}</b>")
+
 async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     msg = " ".join(c.args)
     if not msg: return await u.message.reply_text("⚠️ Nhập nội dung thông báo.")
-    
     with sqlite3.connect(DB_PATH) as conn:
         users = conn.execute("SELECT user_id FROM users").fetchall()
-    
     count = 0
     for user in users:
         try:
@@ -182,25 +217,55 @@ async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
         conn.commit()
     await u.message.reply_text(f"✅ Đã nâng cấp Premium cho {target_id}")
 
+async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(u.effective_user.id): return
+    with sqlite3.connect(DB_PATH) as conn:
+        total_u = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        total_m = conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
+    await u.message.reply_text(f"📊 <b>THỐNG KÊ HỆ THỐNG</b>\n\n👥 Users: {total_u}\n📦 Modules: {total_m}", parse_mode=ParseMode.HTML)
+
+# --- CALLBACK & MESSAGE HANDLER ---
+
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
     await query.answer()
     if query.data == "show_list":
         with sqlite3.connect(DB_PATH) as conn:
             mods = conn.execute("SELECT key, title FROM modules").fetchall()
-        msg = "📂 <b>DANH SÁCH:</b>\n" + "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "Trống."
+        msg = "📂 <b>DANH SÁCH MODULE:</b>\n\n" + "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "Trống."
         await query.message.reply_text(msg, parse_mode=ParseMode.HTML)
     elif query.data == "profile": await profile(u, c)
     elif query.data == "hdsd": await hdsd(u, c)
+
+async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.message or not u.message.text.startswith('/'): return
+    cmd = u.message.text.split()[0][1:].lower()
+    
+    # Bỏ qua nếu là lệnh hệ thống
+    system_cmds = ['start', 'profile', 'get', 'nextdns', 'hdsd', 'broadcast', 'approve', 'stats', 'setlink', 'delmodule', 'list']
+    if cmd in system_cmds: return
+
+    with sqlite3.connect(DB_PATH) as conn:
+        res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
+    
+    if res:
+        guide = (f"✨ <b>HƯỚNG DẪN: {res[0]}</b>\n\n"
+                 f"🔗 Link Module: <code>{res[1]}</code>\n\n"
+                 f"👉 Copy link trên dán vào Shadowrocket/Surge và bật MITM.")
+        await u.message.reply_text(guide, parse_mode=ParseMode.HTML)
 
 # --- APP START ---
 async def post_init(app):
     await app.bot.set_my_commands([
         BotCommand("start", "🏠 Bắt đầu"),
-        BotCommand("profile", "👤 Hồ sơ cá nhân"),
+        BotCommand("profile", "👤 Hồ sơ"),
+        BotCommand("list", "📂 Danh sách module"),
         BotCommand("get", "✨ Tạo Locket"),
         BotCommand("nextdns", "🌐 Cấu hình DNS"),
         BotCommand("hdsd", "📖 Hướng dẫn"),
+        BotCommand("stats", "📊 Thống kê (Admin)"),
+        BotCommand("setlink", "➕ Thêm module (Admin)"),
+        BotCommand("delmodule", "🗑 Xóa module (Admin)"),
         BotCommand("broadcast", "📢 Thông báo (Admin)"),
         BotCommand("approve", "✅ Duyệt Premium (Admin)")
     ])
@@ -218,9 +283,14 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("hdsd", hdsd))
     app.add_handler(CommandHandler("nextdns", get_nextdns))
     app.add_handler(CommandHandler("get", get_bundle))
+    app.add_handler(CommandHandler("list", lambda u, c: callback_handler(u, c))) # shortcut cho callback
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("approve", approve_user))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("setlink", set_link))
+    app.add_handler(CommandHandler("delmodule", del_mod))
     app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(MessageHandler(filters.COMMAND, dynamic_module_handler))
 
-    print("--- FULL BOT READY ---")
+    print("--- NDTT SYSTEM READY ---")
     app.run_polling(drop_pending_updates=True)
