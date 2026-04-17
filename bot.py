@@ -19,7 +19,6 @@ from telegram.ext import (
     filters
 )
 from flask import Flask, request, jsonify, render_template
-
 # --- CONFIGURATION ---
 ROOT_ADMIN_ID = 7346983056 
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TOKEN")
@@ -30,14 +29,11 @@ CONTACT_URL = "https://t.me/NgDanhThanhTrung"
 DONATE_URL = "https://ngdanhthanhtrung.github.io/Bank/"
 KOYEB_URL = "https://colourful-carilyn-ngdanhthanhtrung-1cfbab15.koyeb.app/"
 VN_TZ = timezone(timedelta(hours=7))
-
 logging.basicConfig(level=logging.INFO)
 DB_PATH = "data_system.db"
-
 # --- DATABASE SETUP ---
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
-        # Bật chế độ ghi đệm để tránh lỗi "Database is locked"
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -59,16 +55,13 @@ def init_db():
             added_at TEXT
         )''')
         conn.commit()
-
 init_db()
-
 # --- HELPERS ---
 def is_admin(user_id: int) -> bool:
     if int(user_id) == int(ROOT_ADMIN_ID): return True
     with sqlite3.connect(DB_PATH) as conn:
         res = conn.execute("SELECT 1 FROM admins WHERE user_id = ?", (str(user_id),)).fetchone()
         return res is not None
-
 async def is_premium(user_id: int) -> bool:
     """Kiểm tra xem người dùng có phải Premium không"""
     with sqlite3.connect(DB_PATH) as conn:
@@ -78,7 +71,6 @@ async def check_premium_permission(u: Update):
     """Kiểm tra và thông báo nếu người dùng không có quyền Premium"""
     if await is_premium(u.effective_user.id) or is_admin(u.effective_user.id):
         return True
-    
     txt = (
         "⚠️ <b>TÍNH NĂNG GIỚI HẠN</b>\n\n"
         "Tính năng tạo Module cá nhân hóa yêu cầu tài khoản <b>Premium</b>.\n"
@@ -88,14 +80,12 @@ async def check_premium_permission(u: Update):
           [InlineKeyboardButton("💬 Liên hệ Admin", url=CONTACT_URL)]]
     await send_ui(u, txt, kb)
     return False
-    
 async def add_admin_db(user_id: str):
     """Thêm admin mới vào database"""
     now = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("INSERT OR REPLACE INTO admins (user_id, added_at) VALUES (?, ?)", (user_id, now))
         conn.commit()
-        
 async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
     user = u.effective_user
     if not user or user.is_bot: return
@@ -113,13 +103,11 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
                 interact_count = interact_count + ?
         ''', (uid, fname, uname, now, now, (1 if is_command else 0), (1 if is_command else 0)))
         conn.commit()
-
 async def send_ui(u: Update, text: str, kb: list):
     """Sửa tin nhắn cũ để tạo hiệu ứng chuyển trang, bật xem trước link Web"""
     reply_markup = InlineKeyboardMarkup(kb)
     if u.callback_query:
         try:
-            # Chỉnh sửa tin nhắn hiện tại
             await u.callback_query.edit_message_text(
                 text, 
                 parse_mode=ParseMode.HTML, 
@@ -127,7 +115,6 @@ async def send_ui(u: Update, text: str, kb: list):
                 disable_web_page_preview=False
             )
         except:
-            # Nếu không sửa được (tin quá cũ) thì gửi mới
             await u.effective_message.reply_text(
                 text, 
                 parse_mode=ParseMode.HTML, 
@@ -135,14 +122,12 @@ async def send_ui(u: Update, text: str, kb: list):
                 disable_web_page_preview=False
             )
     else:
-        # Khi gõ lệnh bằng tay -> Gửi tin nhắn mới
         await u.effective_message.reply_text(
             text, 
             parse_mode=ParseMode.HTML, 
             reply_markup=reply_markup, 
             disable_web_page_preview=False
         )
-        
 # --- TEMPLATES ---
 JS_TEMPLATE = """const mapping = {{ '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip', 'watch_vip'], 'Locket': ['Gold', 'com.{user}.premium.yearly'] }};
 const ua = $request.headers["User-Agent"] || $request.headers["user-agent"];
@@ -164,7 +149,6 @@ if (match) {{
   obj.subscriber.entitlements["Gold"] = eInfo;
 }}
 $done({{ body: JSON.stringify(obj) }});"""
-
 MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
 #!desc=Crack By NgDanhThanhTrung
 [Script]
@@ -172,11 +156,9 @@ revenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.
 deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/locket_/main/Locket_NDTT/deleteHeader.js, timeout=60
 [MITM]
 hostname = %APPEND% api.revenuecat.com"""
-
 NEXTDNS_CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>PayloadContent</key><array><dict><key>DNSSettings</key><dict><key>DNSProtocol</key><string>HTTPS</string><key>ServerURL</key><string>https://apple.nextdns.io/{dns_id}</string></dict><key>PayloadIdentifier</key><string>com.nextdns.dns.{dns_id}</string><key>PayloadType</key><string>com.apple.dnsSettings.managed</string><key>PayloadUUID</key><string>{uuid1}</string><key>PayloadVersion</key><integer>1</integer></dict></array><key>PayloadDisplayName</key><string>NextDNS ({dns_id})</string><key>PayloadIdentifier</key><string>com.nextdns.config.{dns_id}</string><key>PayloadType</key><string>Configuration</string><key>PayloadUUID</key><string>{uuid2}</string><key>PayloadVersion</key><integer>1</integer></dict></plist>"""
-
 # --- HANDLERS ---
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (
@@ -197,18 +179,12 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
           [InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("💰 Donate", callback_data="donate_info")],
           [InlineKeyboardButton("📖 HDSD", callback_data="hdsd"), InlineKeyboardButton("💬 Liên hệ Admin", url=CONTACT_URL)]]
     await send_ui(u, txt, kb)
-# 1. Hàm dành cho người dùng gửi yêu cầu tới Admin
 async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user = u.effective_user
     if not c.args:
         return await u.message.reply_text("⚠️ <b>Cú pháp:</b> <code>/sendmail [Nội dung yêu cầu]</code>", parse_mode=ParseMode.HTML)
-
     user_msg = " ".join(c.args)
-    
-    # Tạo nút "THÀNH CÔNG" dành cho Admin
-    # Lưu ý: callback_data chứa ID của người dùng để Admin nhấn vào là biết xử lý cho ai
     kb_admin = [[InlineKeyboardButton("✅ THÀNH CÔNG", callback_data=f"done_req_{user.id}")]]
-    
     report_to_admin = (
         "📨 <b>YÊU CẦU HỖ TRỢ DNS</b>\n"
         "━━━━━━━━━━━━━━━━━━\n"
@@ -216,12 +192,8 @@ async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
         f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
         f"📝 <b>Nội dung:</b> {user_msg}"
     )
-
     try:
-        # Gửi thông tin cho Admin
         await c.bot.send_message(ROOT_ADMIN_ID, report_to_admin, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_admin))
-        
-        # Phản hồi lại cho người dùng
         text_user = (
             "✅ <b>Đã gửi thông tin tới Admin!</b>\n\n"
             "Vui lòng chờ một thời gian để Admin chỉnh sửa DNS hộ bạn. "
@@ -230,38 +202,28 @@ async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(text_user, parse_mode=ParseMode.HTML)
     except Exception as e:
         await u.message.reply_text(f"❌ Lỗi gửi tin nhắn: {str(e)}")
-
-# 2. Hàm dành cho Admin gửi ID DNS về cho người dùng
 async def done_dns_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
-    
     if not c.args or "|" not in " ".join(c.args):
         return await u.message.reply_text("⚠️ <b>Cú pháp:</b> <code>/donedns [ID User] | [ID DNS]</code>", parse_mode=ParseMode.HTML)
-
     try:
         parts = [p.strip() for p in " ".join(c.args).split("|")]
         target_id = parts[0]
         dns_id = parts[1]
-
-        # Gửi tin nhắn trả kết quả cho người dùng
         msg_to_user = (
             "🎉 <b>THÔNG BÁO: DNS ĐÃ SẴN SÀNG!</b>\n\n"
             "Admin đã hoàn tất việc chỉnh sửa DNS cho bạn.\n"
             f"🆔 ID DNS của bạn là: <code>{dns_id}</code>\n\n"
             f"👉 Bây giờ bạn có thể dùng lệnh: <code>/nextdns {dns_id}</code> để cấu hình."
         )
-        
         await c.bot.send_message(target_id, msg_to_user, parse_mode=ParseMode.HTML)
         await u.message.reply_text(f"✅ Đã gửi ID DNS <code>{dns_id}</code> tới người dùng <code>{target_id}</code> thành công!")
     except Exception as e:
         await u.message.reply_text(f"❌ Không thể gửi tin nhắn cho người dùng: {str(e)}")
-        
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
     await query.answer()
     data = query.data
-
-    # --- ĐIỀU HƯỚNG GIAO DIỆN ---
     if data == "show_list":
         await send_module_list(u, c)
     elif data.startswith("list_page_"):
@@ -275,8 +237,6 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
     elif data == "hdsd":
         await hdsd_ui(u, c)
-    
-    # --- XỬ LÝ YÊU CẦU DNS (ADMIN) ---
     elif data.startswith("done_req_"):
         target_uid = data.split("_")[-1]
         await c.bot.send_message(
@@ -293,18 +253,13 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
         return await u.message.reply_text("⚠️ Cú pháp: `/send [nội dung góp ý/báo lỗi]`")
-    
     user = u.effective_user
     text = " ".join(c.args)
-    
-    # Gửi tin nhắn này cho Root Admin
     report = (f"🆘 <b>YÊU CẦU HỖ TRỢ</b>\n"
               f"Người gửi: {user.full_name} (<code>{user.id}</code>)\n"
               f"Nội dung: {text}")
-    
     await c.bot.send_message(ROOT_ADMIN_ID, report, parse_mode=ParseMode.HTML)
     await u.message.reply_text("✅ Đã gửi báo cáo đến Admin. Chúng tôi sẽ phản hồi sớm nhất!")
-    
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
     with sqlite3.connect(DB_PATH) as conn:
@@ -315,7 +270,6 @@ async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
            f"⚡ Tương tác: {user[1]} lần\n🕒 Cuối: {user[3]}\n🌟 Trạng thái: <b>{status}</b>")
     kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
     await send_ui(u, txt, kb)
-
 async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = ("💰 <b>ỦNG HỘ PHÁT TRIỂN (DONATE)</b>\n\n"
            "Nếu bạn thấy hệ thống hữu ích, hãy mời Admin một ly cà phê nhé!\n"
@@ -323,28 +277,19 @@ async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("💳 Ngân hàng ", url=DONATE_URL)],
           [InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
     await send_ui(u, txt, kb)
-
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # 1. Kiểm tra cú pháp đầu vào (username locket | yyyy-mm-dd)
     if not c.args or "|" not in " ".join(c.args): 
         return await u.message.reply_text(
             "⚠️ <b>Cú pháp:</b> <code>/get username locket | yyyy-mm-dd</code>\n"
             "Ví dụ: <code>/get ngdanhthanhtrung | 2026-01-01</code>", 
             parse_mode=ParseMode.HTML
         )
-
-    # Tách dữ liệu
     full_text = " ".join(c.args)
     parts = [p.strip() for p in full_text.split("|")]
-    
-    # Lấy username gốc để hiển thị và tạo safe_user để đặt tên file trên GitHub
     raw_username = parts[0]
     safe_user = "".join(x for x in raw_username if x.isalnum())
-    
     if not safe_user:
         return await u.message.reply_text("❌ Username không hợp lệ (vui lòng chỉ dùng chữ và số).")
-
-    # 2. Xử lý và kiểm tra định dạng ngày tháng
     try:
         raw_date = parts[1].replace("/", "-").replace(".", "-")
         date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
@@ -354,26 +299,19 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             "❌ Ngày không hợp lệ!\nĐịnh dạng đúng: <code>Năm-Tháng-Ngày</code> (VD: 2026-04-17)", 
             parse_mode=ParseMode.HTML
         )
-
-    # 3. Tiến hành xử lý với GitHub
     status = await u.message.reply_text("⏳ <b>Đang khởi tạo Module cá nhân...</b>", parse_mode=ParseMode.HTML)
-    
     try:
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
-
-        js_p, mod_p = f"{safe_user}/Locket.js", f"{safe_user}/LocketGold.sgmodule"
+        js_p, mod_p = f"{safe_user}/LocketGold.js", f"{safe_user}/LocketGold.sgmodule"
         js_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
-
         js_c = JS_TEMPLATE.format(user=safe_user, date=date_str)
         mod_c = MODULE_TEMPLATE.format(user=raw_username, js_url=js_url)
-
         for p, cnt in [(js_p, js_c), (mod_p, mod_c)]:
             try:
                 f = repo.get_contents(p)
                 repo.update_file(p, f"Update module: {safe_user}", cnt, f.sha)
             except:
                 repo.create_file(p, f"Create module: {safe_user}", cnt)
-
         await status.edit_text(
             f"✅ <b>TẠO MODULE THÀNH CÔNG!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -384,15 +322,12 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             f"💖 Nếu thấy hữu ích, hãy ủng hộ Admin tại /donate nhé!", 
             parse_mode=ParseMode.HTML
         )
-        
     except Exception as e:
         logging.error(f"GitHub Error: {str(e)}")
         await status.edit_text(f"❌ Lỗi kết nối GitHub: <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
-		
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await db_auto_reg(u, c)
-
         if not c.args:
             guide = (
                 "🌐 <b>HƯỚNG DẪN CẤU HÌNH NEXTDNS</b>\n"
@@ -408,25 +343,20 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML, 
                 disable_web_page_preview=True
             )
-
         dns_id = c.args[0].strip()
         status = await u.message.reply_text("⏳ <b>Đang khởi tạo cấu hình...</b>", parse_mode=ParseMode.HTML)
-
         xml_content = NEXTDNS_CONFIG.format(
             dns_id=dns_id,
             uuid1=str(uuid.uuid4()),
             uuid2=str(uuid.uuid4())
         )
-
         shortcut_url = "https://www.icloud.com/shortcuts/ef6f685318484784940648ad520b5c4f"
         kb = [
             [InlineKeyboardButton("⚡ Cài qua Shortcuts (iOS)", url=shortcut_url)],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="back_start"), 
              InlineKeyboardButton("💬 Hỗ trợ", url=CONTACT_URL)]
         ]
-
         safe_xml = html.escape(xml_content)
-
         msg_text = (
             f"✅ <b>NEXTDNS CỦA BẠN ĐÃ SẴN SÀNG!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -439,14 +369,12 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
             f"📋 <b>MÃ XML (CHẠM ĐỂ SAO CHÉP):</b>\n"
             f"<pre>{safe_xml}</pre>"
         )
-
         await u.message.reply_text(
             msg_text, 
             parse_mode=ParseMode.HTML, 
             reply_markup=InlineKeyboardMarkup(kb)
         )
         await status.delete()
-
     except Exception as e:
         logging.error(f"Lỗi NextDNS: {e}")
         error_txt = f"❌ <b>Lỗi hệ thống:</b> <code>{str(e)}</code>"
@@ -454,12 +382,10 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await status.edit_text(error_txt, parse_mode=ParseMode.HTML)
         else:
             await u.message.reply_text(error_txt, parse_mode=ParseMode.HTML)
-			
 # --- ADMIN FUNCTIONS ---
 async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): 
         return
-        
     txt = (
         "🛠 <b>BẢNG ĐIỀU KHIỂN QUẢN TRỊ VIÊN</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
@@ -467,34 +393,27 @@ async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
         "• <code>/stats</code>: Xem tổng User, Premium và Modules.\n"
         "• <code>/saoluu</code>: Xuất file Excel backup toàn bộ dữ liệu.\n"
         "• <code>/broadcast [nội dung]</code>: Gửi thông báo tới toàn bộ người dùng.\n\n"
-        
         "👤 <b>Quản lý Người dùng:</b>\n"
         "• <code>/approve [ID]</code>: Cấp quyền <b>Premium</b> cho người dùng.\n"
         "• <code>/revoke [ID]</code>: Thu hồi quyền Premium.\n"
         "• <code>/addadmin [ID]</code>: Cấp quyền <b>Admin</b> (Chỉ Root Admin).\n\n"
-        
         "📦 <b>Quản lý Modules:</b>\n"
         "• <code>/setlink key | title | url</code>: Thêm/Sửa module.\n"
-        "• <code>/delmodule [key]</code>: Xóa module khỏi hệ thống.\n\n"
-        
+        "• <code>/delmodule [key]</code>: Xóa module khỏi hệ thống.\n\n"   
         "💡 <i>Mẹo: Nhấn vào ID người dùng trong danh sách Module để copy nhanh.</i>"
     )
-    
     kb = [
         [InlineKeyboardButton("📂 Danh sách & Quản lý User", callback_data="show_list")],
         [InlineKeyboardButton("🔙 Quay lại trang chủ", callback_data="back_start")]
     ]
-    
     await send_ui(u, txt, kb)
-    
 async def revoke_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: return
     uid = c.args[0]
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET is_premium = 0 WHERE user_id = ?", (uid,))
         conn.commit()
-    await u.message.reply_text(f"🚫 Đã thu hồi quyền Premium của ID: {uid}")
-    
+    await u.message.reply_text(f"🚫 Đã thu hồi quyền Premium của ID: {uid}")    
 async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     with sqlite3.connect(DB_PATH) as conn:
@@ -504,7 +423,6 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
         today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
         active_today = conn.execute("SELECT COUNT(*) FROM users WHERE last_active LIKE ?", (f"{today}%",)).fetchone()[0]
     await u.message.reply_text(f"📊 <b>THỐNG KÊ</b>\n\n👤 Tổng User: {u_c}\n💎 Premium: {p_c}\n📦 Modules: {m_c}\n⚡ Hoạt động hôm nay: {active_today}", parse_mode=ParseMode.HTML)
-
 async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     status_msg = await u.message.reply_text("⏳ Đang xuất dữ liệu...")
@@ -521,23 +439,17 @@ async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_document(document=output, filename=f"NDTT_Backup_{timestamp}.xlsx", caption=f"📂 Sao lưu hoàn tất ({len(df_u)} Users, {len(df_m)} Modules)")
         await status_msg.delete()
     except Exception as e: await status_msg.edit_text(f"❌ Lỗi sao lưu: {e}")
-
 async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: return
     uid = c.args[0]
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (uid,))
         conn.commit()
-    
-    # Lấy tên người dùng vừa được duyệt để thông báo cho admin
     await u.message.reply_text(f"✅ Đã cấp quyền Premium cho ID: <code>{uid}</code>", parse_mode=ParseMode.HTML)
-    
     try: 
         await c.bot.send_message(uid, "🎉 Chúc mừng! Tài khoản của bạn đã được nâng cấp lên <b>Premium</b>!", parse_mode=ParseMode.HTML)
     except: 
         await u.message.reply_text("⚠️ Đã duyệt DB nhưng không thể gửi tin nhắn cho User (có thể họ đã block bot).")
-        
-
 async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     msg = " ".join(c.args)
@@ -551,7 +463,6 @@ async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.05)
         except: pass
     await u.message.reply_text(f"✅ Đã gửi thông báo tới {count} người dùng.")
-
 async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     try:
@@ -561,7 +472,6 @@ async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
             conn.commit()
         await u.message.reply_text(f"✅ Đã lưu module: {t}")
     except: await u.message.reply_text("⚠️ Cú pháp: `/setlink key | tiêu đề | link`")
-
 async def del_mod(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: return
     key = c.args[0].lower()
@@ -569,14 +479,12 @@ async def del_mod(u: Update, c: ContextTypes.DEFAULT_TYPE):
         conn.execute("DELETE FROM modules WHERE key = ?", (key,))
         conn.commit()
     await u.message.reply_text(f"🗑 Đã xóa module: {key}")
-
 async def set_admin_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     """Lệnh cấp quyền Admin (Chỉ Root Admin ID mới dùng được)"""
     if u.effective_user.id != ROOT_ADMIN_ID:
         return
     if not c.args:
         return await u.message.reply_text("⚠️ Cú pháp: `/addadmin ID`")
-    
     target_id = c.args[0]
     await add_admin_db(target_id)
     await u.message.reply_text(f"✅ Đã cấp quyền Admin cho ID: <code>{target_id}</code>", parse_mode=ParseMode.HTML)
@@ -590,33 +498,26 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
         txt = f"<b>📂 DANH SÁCH MODULES ({len(mods)})</b>\n\n"
         txt += "\n".join([f"🔹 /{m[0]} - {m[1]}" for m in mods]) if mods else "📭 Hiện chưa có module nào."
         kb = [[InlineKeyboardButton("💰 Donate ủng hộ", callback_data="donate_info")]]
-        
         if is_user_admin:
             offset = (page - 1) * per_page
             total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             total_pages = (total_users + per_page - 1) // per_page
-            # Lấy chi tiết thông tin member
             users = conn.execute("""
                 SELECT user_id, full_name, join_date, interact_count, is_premium 
                 FROM users ORDER BY last_active DESC LIMIT ? OFFSET ?
             """, (per_page, offset)).fetchall()
-            
             txt += f"\n\n👑 <b>QUẢN LÝ THÀNH VIÊN ({page}/{total_pages})</b>"
             for us in users:
                 status = "💎" if us[4] else "🆓"
                 txt += (f"\n\n👤 <b>{us[1]}</b> (<code>{us[0]}</code>)\n"
                         f"📅 Join: {us[2]} | ⚡ Lần: {us[3]} | {status}")
-            
             nav = []
             if page > 1: nav.append(InlineKeyboardButton("⬅️ Trước", callback_data=f"list_page_{page-1}"))
             if page < total_pages: nav.append(InlineKeyboardButton("Sau ➡️", callback_data=f"list_page_{page+1}"))
             if nav: kb.append(nav)
-            
     kb.append([InlineKeyboardButton("👤 Hồ sơ của tôi", callback_data="profile")])
     kb.append([InlineKeyboardButton("🔙 Quay lại trang chủ", callback_data="back_start")])
     await send_ui(u, txt, kb)
-    
-
 async def hdsd_ui(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (
         "📖 <b>HƯỚNG DẪN SỬ DỤNG:</b>\n\n"
@@ -637,30 +538,23 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif query.data == "donate_info": await donate_info(u, c)
     elif query.data == "back_start": await start(u, c)
     elif query.data == "hdsd": await hdsd_ui(u, c)
-
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
-
     cmd = u.message.text.split()[0][1:].split('@')[0].lower()
-    
     sys_cmds = [
         'start', 'profile', 'get', 'nextdns', 'admin', 'stats', 
         'saoluu', 'approve', 'broadcast', 'setlink', 'delmodule', 
         'list', 'donate', 'hdsd', 'addadmin', 'send', 'sendmail', 
         'donedns', 'revoke'
     ]
-    
     if cmd in sys_cmds:
         return
-    
     try:
         with sqlite3.connect(DB_PATH) as conn:
             res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
-        
         if res:
             title, url = res
-            
             txt = (
                 f"📦 <b>MODULE: {title.upper()}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -673,29 +567,23 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 f"4️⃣ <b>HTTPS Decryption:</b> Phải đảm bảo mục <b>MITM</b> đã được cài đặt chứng chỉ và đang ở trạng thái <b>Bật (ON)</b> thì script mới có hiệu lực.\n\n"
                 f"💡 <i>Lưu ý: Nếu bạn chưa cài chứng chỉ CA, hãy gõ /hdsd để xem cách làm.</i>"
             )
-            
             kb = [
                 [InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)],
                 [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]
             ]
-            
             await u.message.reply_text(
                 text=txt,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb),
                 disable_web_page_preview=True
             )
-            
     except Exception as e:
         logging.error(f"Error: {e}")
-        
 # --- WEB SERVER ---
 server = Flask(__name__)
-
 @server.route('/')
 def index():
     return render_template('index.html')
-
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "🏠 Bắt đầu"), 
@@ -707,8 +595,7 @@ async def post_init(application):
         BotCommand("sendmail", "📧 Gửi yêu cầu chỉnh DNS"),
         BotCommand("donate", "💰 Donate ủng hộ Admin"),
         BotCommand("admin", "🛠 Menu Admin")
-    ])
-    
+    ])    
 # --- MAIN ---
 if __name__ == "__main__":
     threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
