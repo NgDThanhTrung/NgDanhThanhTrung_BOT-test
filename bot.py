@@ -570,14 +570,11 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
         
 # --- WEB SERVER ---
-server = Flask(__name__, template_folder='templates')
+server = Flask(__name__)
 
 @server.route('/')
 def index():
-    try:
-        return render_template('index.html')
-    except Exception as e:
-        return f"Lỗi: Không tìm thấy file index.html trong thư mục templates. {str(e)}"
+    return render_template('index.html')
 
 async def post_init(application):
     await application.bot.set_my_commands([
