@@ -526,10 +526,17 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
     
 
 async def hdsd_ui(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    txt = "📖 <b>HDSD:</b>\n1. <code>/get user | date</code>\n2. Cài Module vào Surge/Shadowrocket.\n3. Bật MITM."
+    txt = (
+        "📖 <b>HƯỚNG DẪN SỬ DỤNG:</b>\n\n"
+        "🔹 <b>MODULE CÓ SẴN:</b>\n"
+        "Nhấn nút 'Danh sách Module' hoặc gõ /list.\n"
+        "Sau đó gõ <code>/[tên_module]</code> để lấy link.\n\n"
+        "🔹 <b>TẠO MODULE LOCKET RIÊNG:</b>\n"
+        "Cú pháp: <code>/get tên_user | yyyy-mm-dd</code>\n"
+        "<i>Ví dụ: /get ndtt | 2025-01-16</i>"
+    )
     kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_start")]]
     await send_ui(u, txt, kb)
-
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query; await query.answer()
     if query.data == "show_list": await send_module_list(u, c)
@@ -538,8 +545,6 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif query.data == "donate_info": await donate_info(u, c)
     elif query.data == "back_start": await start(u, c)
     elif query.data == "hdsd": await hdsd_ui(u, c)
-
-# --- VỊ TRÍ: Thay thế hàm dynamic_module_handler cũ ---
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text.startswith('/'): return
