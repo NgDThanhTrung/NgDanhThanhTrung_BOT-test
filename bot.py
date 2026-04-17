@@ -197,7 +197,86 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
           [InlineKeyboardButton("👤 Hồ sơ", callback_data="profile"), InlineKeyboardButton("💰 Donate", callback_data="donate_info")],
           [InlineKeyboardButton("📖 HDSD", callback_data="hdsd"), InlineKeyboardButton("💬 Liên hệ Admin", url=CONTACT_URL)]]
     await send_ui(u, txt, kb)
+# 1. Hàm dành cho người dùng gửi yêu cầu tới Admin
+async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    user = u.effective_user
+    if not c.args:
+        return await u.message.reply_text("⚠️ <b>Cú pháp:</b> <code>/sendmail [Nội dung yêu cầu]</code>", parse_mode=ParseMode.HTML)
+
+    user_msg = " ".join(c.args)
     
+    # Tạo nút "THÀNH CÔNG" dành cho Admin
+    # Lưu ý: callback_data chứa ID của người dùng để Admin nhấn vào là biết xử lý cho ai
+    kb_admin = [[InlineKeyboardButton("✅ THÀNH CÔNG", callback_data=f"done_req_{user.id}")]]
+    
+    report_to_admin = (
+        "📨 <b>YÊU CẦU HỖ TRỢ DNS</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>Người gửi:</b> {user.full_name}\n"
+        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+        f"📝 <b>Nội dung:</b> {user_msg}"
+    )
+
+    try:
+        # Gửi thông tin cho Admin
+        await c.bot.send_message(ROOT_ADMIN_ID, report_to_admin, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_admin))
+        
+        # Phản hồi lại cho người dùng
+        text_user = (
+            "✅ <b>Đã gửi thông tin tới Admin!</b>\n\n"
+            "Vui lòng chờ một thời gian để Admin chỉnh sửa DNS hộ bạn. "
+            "Tới khi có thông báo trả về, bạn hãy dùng lệnh <code>/nextdns</code> kèm với ID DNS sẽ được Admin gửi về."
+        )
+        await u.message.reply_text(text_user, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await u.message.reply_text(f"❌ Lỗi gửi tin nhắn: {str(e)}")
+
+# 2. Hàm dành cho Admin gửi ID DNS về cho người dùng
+async def done_dns_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(u.effective_user.id): return
+    
+    if not c.args or "|" not in " ".join(c.args):
+        return await u.message.reply_text("⚠️ <b>Cú pháp:</b> <code>/donedns [ID User] | [ID DNS]</code>", parse_mode=ParseMode.HTML)
+
+    try:
+        parts = [p.strip() for p in " ".join(c.args).split("|")]
+        target_id = parts[0]
+        dns_id = parts[1]
+
+        # Gửi tin nhắn trả kết quả cho người dùng
+        msg_to_user = (
+            "🎉 <b>THÔNG BÁO: DNS ĐÃ SẴN SÀNG!</b>\n\n"
+            "Admin đã hoàn tất việc chỉnh sửa DNS cho bạn.\n"
+            f"🆔 ID DNS của bạn là: <code>{dns_id}</code>\n\n"
+            f"👉 Bây giờ bạn có thể dùng lệnh: <code>/nextdns {dns_id}</code> để cấu hình."
+        )
+        
+        await c.bot.send_message(target_id, msg_to_user, parse_mode=ParseMode.HTML)
+        await u.message.reply_text(f"✅ Đã gửi ID DNS <code>{dns_id}</code> tới người dùng <code>{target_id}</code> thành công!")
+    except Exception as e:
+        await u.message.reply_text(f"❌ Không thể gửi tin nhắn cho người dùng: {str(e)}")
+async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    query = u.callback_query; await query.answer()
+    if query.data == "show_list": await send_module_list(u, c)
+    elif query.data.startswith("list_page_"): await send_module_list(u, c, page=int(query.data.split("_")[-1]))
+    elif query.data == "profile": await profile(u, c)
+    elif query.data == "donate_info": await donate_info(u, c)
+    elif query.data == "back_start": await start(u, c)
+    elif query.data == "hdsd": await hdsd_ui(u, c)
+    
+    # --- THÊM ĐOẠN NÀY ---
+    elif query.data.startswith("done_req_"):
+        target_uid = query.data.split("_")[-1]
+        # Thông báo cho Admin biết cần làm gì tiếp theo
+        await c.bot.send_message(
+            ROOT_ADMIN_ID, 
+            f"📩 <b>Tiến hành trả kết quả:</b>\n\n"
+            f"Người dùng: <code>{target_uid}</code>\n"
+            f"Hãy dùng lệnh sau để gửi ID DNS cho họ:\n"
+            f"<code>/donedns {target_uid} | [MÃ_DNS]</code>",
+            parse_mode=ParseMode.HTML
+        )
+        
 async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
         return await u.message.reply_text("⚠️ Cú pháp: `/send [nội dung góp ý/báo lỗi]`")
@@ -495,9 +574,10 @@ async def post_init(application):
         BotCommand("start", "🏠 Bắt đầu"), 
         BotCommand("profile", "👤 Hồ sơ"),
         BotCommand("list", "📂 Danh sách Modules"), 
-        BotCommand("get", "✨ Tạo Locket Gold (Premium)"),
+        BotCommand("get", "✨ Tạo Locket Gold"),
         BotCommand("nextdns", "🌐 Tạo Config NextDNS"), 
         BotCommand("send", "🆘 Báo lỗi/Góp ý"),
+        BotCommand("sendmail", "📧 Gửi yêu cầu chỉnh DNS"),
         BotCommand("donate", "💰 Donate ủng hộ Admin"),
         BotCommand("admin", "🛠 Menu Admin")
     ])
@@ -515,6 +595,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("donate", donate_info))
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("sendmail", send_mail_to_admin))
+    app.add_handler(CommandHandler("donedns", done_dns_cmd))
     app.add_handler(CommandHandler("saoluu", backup_data))
     app.add_handler(CommandHandler("approve", approve_user))
     app.add_handler(CommandHandler("send", send_feedback))
