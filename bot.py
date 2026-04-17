@@ -390,11 +390,71 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await status.edit_text(f"❌ Lỗi kết nối GitHub: <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 		
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not c.args: return await u.message.reply_text("🛠 Gõ: <code>/nextdns [ID]</code>", parse_mode=ParseMode.HTML)
-    dns_id = c.args[0].strip()
-    xml = NEXTDNS_CONFIG.format(dns_id=dns_id, uuid1=str(uuid.uuid4()), uuid2=str(uuid.uuid4()))
-    await u.message.reply_text(f"✅ <b>Cấu hình NextDNS:</b>\n<pre>{html.escape(xml)}</pre>", parse_mode=ParseMode.HTML)
+    try:
+        await db_auto_reg(u, c)
 
+        if not c.args:
+            guide = (
+                "🌐 <b>HƯỚNG DẪN CẤU HÌNH NEXTDNS</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n\n"
+                "1️⃣ Truy cập <a href='https://my.nextdns.io'>my.nextdns.io</a> để tạo tài khoản.\n"
+                "2️⃣ Đặt mật khẩu là <code>12345678</code> nếu cần Admin hỗ trợ.\n"
+                "3️⃣ Gõ <code>/sendmail [Email]</code> để báo Admin chỉnh cấu hình.\n"
+                "4️⃣ Lấy <b>ID</b> (6 ký tự) tại tab Setup.\n\n"
+                "👉 <b>Cú pháp lấy mã:</b> <code>/nextdns [ID_CỦA_BẠN]</code>"
+            )
+            return await u.message.reply_text(
+                guide, 
+                parse_mode=ParseMode.HTML, 
+                disable_web_page_preview=True
+            )
+
+        dns_id = c.args[0].strip()
+        status = await u.message.reply_text("⏳ <b>Đang khởi tạo cấu hình...</b>", parse_mode=ParseMode.HTML)
+
+        xml_content = NEXTDNS_CONFIG.format(
+            dns_id=dns_id,
+            uuid1=str(uuid.uuid4()),
+            uuid2=str(uuid.uuid4())
+        )
+
+        shortcut_url = "https://www.icloud.com/shortcuts/ef6f685318484784940648ad520b5c4f"
+        kb = [
+            [InlineKeyboardButton("⚡ Cài qua Shortcuts (iOS)", url=shortcut_url)],
+            [InlineKeyboardButton("🔙 Quay lại", callback_data="back_start"), 
+             InlineKeyboardButton("💬 Hỗ trợ", url=CONTACT_URL)]
+        ]
+
+        safe_xml = html.escape(xml_content)
+
+        msg_text = (
+            f"✅ <b>NEXTDNS CỦA BẠN ĐÃ SẴN SÀNG!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 ID DNS: <code>{dns_id}</code>\n\n"
+            f"🛠 <b>CÁCH CÀI ĐẶT NHANH:</b>\n"
+            f"1. Nhấn nút <b>⚡ Cài qua Shortcuts</b> để tải phím tắt.\n"
+            f"2. Chạm vào mã bên dưới để <b>Copy</b>.\n"
+            f"3. Dán mã vào <b>Ghi chú (Notes)</b>.\n"
+            f"4. Nhấn <b>Chia sẻ</b> ➔ Chọn phím tắt <b>NextDNS</b>.\n\n"
+            f"📋 <b>MÃ XML (CHẠM ĐỂ SAO CHÉP):</b>\n"
+            f"<pre>{safe_xml}</pre>"
+        )
+
+        await u.message.reply_text(
+            msg_text, 
+            parse_mode=ParseMode.HTML, 
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        await status.delete()
+
+    except Exception as e:
+        logging.error(f"Lỗi NextDNS: {e}")
+        error_txt = f"❌ <b>Lỗi hệ thống:</b> <code>{str(e)}</code>"
+        if 'status' in locals():
+            await status.edit_text(error_txt, parse_mode=ParseMode.HTML)
+        else:
+            await u.message.reply_text(error_txt, parse_mode=ParseMode.HTML)
+			
 # --- ADMIN FUNCTIONS ---
 async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): 
