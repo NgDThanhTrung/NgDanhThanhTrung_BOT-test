@@ -233,24 +233,23 @@ async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await send_ui(u, txt, kb)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not await check_premium_permission(u): 
-        return
-
     if not c.args or "|" not in " ".join(c.args): 
-        return await u.message.reply_text("⚠️ Cú pháp: `/get Tên | yyyy-mm-dd` (Ví dụ: `/get nghia | 2024-01-01`)")
+        return await u.message.reply_text(
+            "⚠️ <b>Cú pháp:</b> <code>/get Tên | yyyy-mm-dd</code>\n"
+            "Ví dụ: <code>/get nghia | 2024-01-01</code>", 
+            parse_mode=ParseMode.HTML
+        )
 
     parts = [p.strip() for p in " ".join(c.args).split("|")]
-    
-    # Làm sạch tên người dùng
+
     safe_user = "".join(x for x in parts[0] if x.isalnum())
-    
-    # CHỈNH SỬA: Kiểm tra và chuẩn hóa ngày tháng
+
     try:
         raw_date = parts[1].replace("/", "-").replace(".", "-")
         date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
         date_str = date_obj.strftime("%Y-%m-%d")
     except (ValueError, IndexError):
-        return await u.message.reply_text("❌ Ngày không hợp lệ! Vui lòng nhập đúng định dạng `Năm-Tháng-Ngày` (Ví dụ: 2025-12-30)")
+        return await u.message.reply_text("❌ Ngày không hợp lệ! Vui lòng nhập: <code>Năm-Tháng-Ngày</code>", parse_mode=ParseMode.HTML)
 
     status = await u.message.reply_text("⏳ Đang xử lý trên Github...")
     try:
@@ -268,9 +267,16 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             except:
                 repo.create_file(p, f"Create {safe_user}", cnt)
                 
-        await status.edit_text(f"✅ <b>Tạo thành công!</b>\n\n🔗 Module:\n<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>", parse_mode=ParseMode.HTML)
+        await status.edit_text(
+            f"✅ <b>Tạo thành công!</b>\n\n"
+            f"🔗 <b>Module của bạn:</b>\n"
+            f"<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>"
+            f"\n\n💖 Nếu thấy hữu ích, hãy ủng hộ Admin tại /donate nhé!", 
+            parse_mode=ParseMode.HTML
+        )
     except Exception as e: 
-        await status.edit_text(f"❌ Lỗi: {str(e)}")
+        await status.edit_text(f"❌ Lỗi kết nối GitHub: {str(e)}")
+        
         
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args: return await u.message.reply_text("🛠 Gõ: <code>/nextdns [ID]</code>", parse_mode=ParseMode.HTML)
