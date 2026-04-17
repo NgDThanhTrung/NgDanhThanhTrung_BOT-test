@@ -542,12 +542,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
     cmd = u.message.text.split()[0][1:].split('@')[0].lower()
-    sys_cmds = [
-        'start', 'profile', 'get', 'nextdns', 'admin', 'stats', 
-        'saoluu', 'approve', 'broadcast', 'setlink', 'delmodule', 
-        'list', 'donate', 'hdsd', 'addadmin', 'send', 'sendmail', 
-        'donedns', 'revoke'
-    ]
+    sys_cmds = ['start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 'stats', 'sendmail', 'donedns', 'saoluu', 'approve', 'send', 'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd']
     if cmd in sys_cmds:
         return
     try:
@@ -567,18 +562,15 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 f"4️⃣ <b>HTTPS Decryption:</b> Phải đảm bảo mục <b>MITM</b> đã được cài đặt chứng chỉ và đang ở trạng thái <b>Bật (ON)</b> thì script mới có hiệu lực.\n\n"
                 f"💡 <i>Lưu ý: Nếu bạn chưa cài chứng chỉ CA, hãy gõ /hdsd để xem cách làm.</i>"
             )
-            kb = [
-                [InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)],
-                [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]
-            ]
-            await u.message.reply_text(
-                text=txt,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb),
-                disable_web_page_preview=True
-            )
+            kb = [[InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)], [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]]
+            await u.message.reply_text(text=txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb), disable_web_page_preview=True)
+        elif u.effective_chat.type == "private":
+            not_found_txt = f"🔍 <b>Không tìm thấy Module:</b> <code>/{cmd}</code>\n\nVui lòng kiểm tra lại hoặc nhấn nút dưới đây để xem danh sách Module hiện có."
+            kb = [[InlineKeyboardButton("📂 Xem danh sách Module", callback_data="show_list")]]
+            await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
-        logging.error(f"Error: {e}")
+        logging.error(f"Error in dynamic_handler: {e}")
+        
 # --- WEB SERVER ---
 server = Flask(__name__)
 @server.route('/')
