@@ -579,27 +579,55 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif query.data == "hdsd": await hdsd_ui(u, c)
 
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not u.message or not u.message.text.startswith('/'): return
-    cmd = u.message.text.split()[0][1:].lower()
+    if not u.message or not u.message.text or not u.message.text.startswith('/'):
+        return
+
+    cmd = u.message.text.split()[0][1:].split('@')[0].lower()
     
-    # Bỏ qua các lệnh hệ thống
-    sys_cmds = ['start', 'profile', 'get', 'nextdns', 'admin', 'stats', 'saoluu', 'approve', 'broadcast', 'setlink', 'delmodule', 'list', 'donate', 'hdsd', 'addadmin']
-    if cmd in sys_cmds: return
+    sys_cmds = [
+        'start', 'profile', 'get', 'nextdns', 'admin', 'stats', 
+        'saoluu', 'approve', 'broadcast', 'setlink', 'delmodule', 
+        'list', 'donate', 'hdsd', 'addadmin', 'send', 'sendmail', 
+        'donedns', 'revoke'
+    ]
     
-    with sqlite3.connect(DB_PATH) as conn:
-        res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
+    if cmd in sys_cmds:
+        return
     
-    if res:
-        title, url = res
-        txt = (
-            f"📦 <b>MODULE: {title.upper()}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🔗 Link: <code>{url}</code>\n\n"
-            f"💡 <i>Hướng dẫn: Copy link trên dán vào mục Module trong Shadowrocket/Surge và bật MITM.</i>"
-        )
-        kb = [[InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)],
-              [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]]
-        await u.message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
+        
+        if res:
+            title, url = res
+            
+            txt = (
+                f"📦 <b>MODULE: {title.upper()}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n\n"
+                f"🔗 <b>ĐƯỜNG DẪN CÀI ĐẶT:</b>\n"
+                f"<code>{url}</code>\n\n"
+                f"🛠 <b>HƯỚNG DẪN CHI TIẾT:</b>\n"
+                f"1️⃣ <b>Sao chép:</b> Chạm vào dòng link phía trên để tự động copy.\n"
+                f"2️⃣ <b>Thêm Module:</b> Mở Shadowrocket/Surge/QuantumultX ➔ Tìm mục <b>Module</b> ➔ Chọn <b>Add Module</b>.\n"
+                f"3️⃣ <b>Dán & Lưu:</b> Dán link đã copy vào và nhấn lưu lại.\n"
+                f"4️⃣ <b>HTTPS Decryption:</b> Phải đảm bảo mục <b>MITM</b> đã được cài đặt chứng chỉ và đang ở trạng thái <b>Bật (ON)</b> thì script mới có hiệu lực.\n\n"
+                f"💡 <i>Lưu ý: Nếu bạn chưa cài chứng chỉ CA, hãy gõ /hdsd để xem cách làm.</i>"
+            )
+            
+            kb = [
+                [InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)],
+                [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]
+            ]
+            
+            await u.message.reply_text(
+                text=txt,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb),
+                disable_web_page_preview=True
+            )
+            
+    except Exception as e:
+        logging.error(f"Error: {e}")
         
 # --- WEB SERVER ---
 server = Flask(__name__)
