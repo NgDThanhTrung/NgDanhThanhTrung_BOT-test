@@ -129,26 +129,55 @@ async def send_ui(u: Update, text: str, kb: list):
             disable_web_page_preview=False
         )
 # --- TEMPLATES ---
-JS_TEMPLATE = """const mapping = {{ '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip', 'watch_vip'], 'Locket': ['Gold', 'com.{user}.premium.yearly'] }};
+JS_TEMPLATE = """const mapping = {{
+  '%E8%BD%A6%E7%A5%A8%E7%A5%A8': ['vip', 'watch_vip'],
+  'Locket': ['Gold', 'com.{user}.premium.yearly']
+}};
+
 const ua = $request.headers["User-Agent"] || $request.headers["user-agent"];
 let obj = JSON.parse($response.body);
+
 obj.subscriber = obj.subscriber || {{}};
 obj.subscriber.entitlements = obj.subscriber.entitlements || {{}};
 obj.subscriber.subscriptions = obj.subscriber.subscriptions || {{}};
-const pInfo = {{ is_sandbox: false, ownership_type: "PURCHASED", expires_date: "2999-12-18T01:04:17Z", purchase_date: "{date}T01:04:17Z", store: "app_store" }};
-const eInfo = {{ purchase_date: "{date}T01:04:17Z", product_identifier: "com.{user}.premium.yearly", expires_date: "2999-12-18T01:04:17Z" }};
+
+const premiumInfo = {{
+  is_sandbox: false,
+  ownership_type: "PURCHASED",
+  billing_issues_detected_at: null,
+  period_type: "normal",
+  expires_date: "2999-12-18T01:04:17Z",
+  original_purchase_date: "{date}T01:04:17Z",
+  purchase_date: "{date}T01:04:17Z",
+  store: "app_store"
+}};
+
+const entitlementInfo = {{
+  grace_period_expires_date: null,
+  purchase_date: "{date}T01:04:17Z",
+  product_identifier: "com.{user}.premium.yearly",
+  expires_date: "2999-12-18T01:04:17Z"
+}};
+
 const match = Object.keys(mapping).find(e => ua.includes(e));
+
 if (match) {{
   let [entKey, subKey] = mapping[match];
   let finalSubKey = subKey || "com.{user}.premium.yearly";
-  eInfo.product_identifier = finalSubKey;
-  obj.subscriber.subscriptions[finalSubKey] = pInfo;
-  obj.subscriber.entitlements[entKey] = eInfo;
+  
+  entitlementInfo.product_identifier = finalSubKey;
+  obj.subscriber.subscriptions[finalSubKey] = premiumInfo;
+  obj.subscriber.entitlements[entKey] = entitlementInfo;
 }} else {{
-  obj.subscriber.subscriptions["com.{user}.premium.yearly"] = pInfo;
-  obj.subscriber.entitlements["Gold"] = eInfo;
+  obj.subscriber.subscriptions["com.{user}.premium.yearly"] = premiumInfo;
+  obj.subscriber.entitlements["Gold"] = entitlementInfo;
+  obj.subscriber.entitlements["pro"] = entitlementInfo;
 }}
+
+obj.Attention = "Chúc mừng bạn! Vui lòng không bán hoặc chia sẻ cho người khác!";
+
 $done({{ body: JSON.stringify(obj) }});"""
+
 MODULE_TEMPLATE = """#!name=Locket-Gold ({user})
 #!desc=Crack By NgDanhThanhTrung
 [Script]
@@ -156,9 +185,44 @@ revenuecat = type=http-response, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.
 deleteHeader = type=http-request, pattern=^https:\\/\\/api\\.revenuecat\\.com\\/.+\\/(receipts|subscribers), script-path=https://raw.githubusercontent.com/NgDanhThanhTrung/locket_/main/Locket_NDTT/deleteHeader.js, timeout=60
 [MITM]
 hostname = %APPEND% api.revenuecat.com"""
+
 NEXTDNS_CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>PayloadContent</key><array><dict><key>DNSSettings</key><dict><key>DNSProtocol</key><string>HTTPS</string><key>ServerURL</key><string>https://apple.nextdns.io/{dns_id}</string></dict><key>PayloadIdentifier</key><string>com.nextdns.dns.{dns_id}</string><key>PayloadType</key><string>com.apple.dnsSettings.managed</string><key>PayloadUUID</key><string>{uuid1}</string><key>PayloadVersion</key><integer>1</integer></dict></array><key>PayloadDisplayName</key><string>NextDNS ({dns_id})</string><key>PayloadIdentifier</key><string>com.nextdns.config.{dns_id}</string><key>PayloadType</key><string>Configuration</string><key>PayloadUUID</key><string>{uuid2}</string><key>PayloadVersion</key><integer>1</integer></dict></plist>"""
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>DNSSettings</key>
+            <dict>
+                <key>DNSProtocol</key>
+                <string>HTTPS</string>
+                <key>ServerURL</key>
+                <string>https://apple.nextdns.io/{dns_id}</string>
+            </dict>
+            <key>PayloadIdentifier</key>
+            <string>com.nextdns.dns.{dns_id}</string>
+            <key>PayloadType</key>
+            <string>com.apple.dnsSettings.managed</string>
+            <key>PayloadUUID</key>
+            <string>{uuid1}</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+        </dict>
+    </array>
+    <key>PayloadDisplayName</key>
+    <string>NextDNS ({dns_id})</string>
+    <key>PayloadIdentifier</key>
+    <string>com.nextdns.config.{dns_id}</string>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>{uuid2}</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>"""
+
 # --- HANDLERS ---
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = (
@@ -365,7 +429,7 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
             f"1. Nhấn nút <b>⚡ Cài qua Shortcuts</b> để tải phím tắt.\n"
             f"2. Chạm vào mã bên dưới để <b>Copy</b>.\n"
             f"3. Dán mã vào <b>Ghi chú (Notes)</b>.\n"
-            f"4. Nhấn <b>Chia sẻ</b> ➔ Chọn phím tắt <b>NextDNS</b>.\n\n"
+            f"4. Nhấn <b>Chia sẻ</b> ➔ Chọn phím tắt <b>Get Mobileconfig</b>.\n\n"
             f"📋 <b>MÃ XML (CHẠM ĐỂ SAO CHÉP):</b>\n"
             f"<pre>{safe_xml}</pre>"
         )
