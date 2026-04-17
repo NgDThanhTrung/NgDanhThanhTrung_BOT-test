@@ -18,7 +18,7 @@ from telegram.ext import (
     TypeHandler,
     filters
 )
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 
 # --- CONFIGURATION ---
 ROOT_ADMIN_ID = 7346983056 
@@ -64,7 +64,7 @@ init_db()
 
 # --- HELPERS ---
 def is_admin(user_id: int) -> bool:
-    if user_id == ROOT_ADMIN_ID: return True
+    if int(user_id) == int(ROOT_ADMIN_ID): return True
     with sqlite3.connect(DB_PATH) as conn:
         res = conn.execute("SELECT 1 FROM admins WHERE user_id = ?", (str(user_id),)).fetchone()
         return res is not None
@@ -255,28 +255,41 @@ async def done_dns_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(f"✅ Đã gửi ID DNS <code>{dns_id}</code> tới người dùng <code>{target_id}</code> thành công!")
     except Exception as e:
         await u.message.reply_text(f"❌ Không thể gửi tin nhắn cho người dùng: {str(e)}")
+        
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    query = u.callback_query; await query.answer()
-    if query.data == "show_list": await send_module_list(u, c)
-    elif query.data.startswith("list_page_"): await send_module_list(u, c, page=int(query.data.split("_")[-1]))
-    elif query.data == "profile": await profile(u, c)
-    elif query.data == "donate_info": await donate_info(u, c)
-    elif query.data == "back_start": await start(u, c)
-    elif query.data == "hdsd": await hdsd_ui(u, c)
+    query = u.callback_query
+    await query.answer()
+    data = query.data
+
+    # --- ĐIỀU HƯỚNG GIAO DIỆN ---
+    if data == "show_list":
+        await send_module_list(u, c)
+    elif data.startswith("list_page_"):
+        page_num = int(data.split("_")[-1])
+        await send_module_list(u, c, page=page_num)
+    elif data == "profile":
+        await profile(u, c)
+    elif data == "donate_info":
+        await donate_info(u, c)
+    elif data == "back_start":
+        await start(u, c)
+    elif data == "hdsd":
+        await hdsd_ui(u, c)
     
-    # --- THÊM ĐOẠN NÀY ---
-    elif query.data.startswith("done_req_"):
-        target_uid = query.data.split("_")[-1]
-        # Thông báo cho Admin biết cần làm gì tiếp theo
+    # --- XỬ LÝ YÊU CẦU DNS (ADMIN) ---
+    elif data.startswith("done_req_"):
+        target_uid = data.split("_")[-1]
         await c.bot.send_message(
-            ROOT_ADMIN_ID, 
-            f"📩 <b>Tiến hành trả kết quả:</b>\n\n"
-            f"Người dùng: <code>{target_uid}</code>\n"
-            f"Hãy dùng lệnh sau để gửi ID DNS cho họ:\n"
-            f"<code>/donedns {target_uid} | [MÃ_DNS]</code>",
+            chat_id=ROOT_ADMIN_ID,
+            text=(
+                f"📩 <b>TIẾN HÀNH TRẢ KẾT QUẢ</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"👤 Người dùng: <code>{target_uid}</code>\n\n"
+                f"Hãy dùng lệnh dưới đây để gửi mã DNS cho họ:\n"
+                f"<code>/donedns {target_uid} | [MÃ_DNS_TẠI_ĐÂY]</code>"
+            ),
             parse_mode=ParseMode.HTML
         )
-        
 async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
         return await u.message.reply_text("⚠️ Cú pháp: `/send [nội dung góp ý/báo lỗi]`")
@@ -312,51 +325,70 @@ async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await send_ui(u, txt, kb)
 
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # 1. Kiểm tra cú pháp đầu vào (username locket | yyyy-mm-dd)
     if not c.args or "|" not in " ".join(c.args): 
         return await u.message.reply_text(
-            "⚠️ <b>Cú pháp:</b> <code>/get Tên | yyyy-mm-dd</code>\n"
-            "Ví dụ: <code>/get nghia | 2024-01-01</code>", 
+            "⚠️ <b>Cú pháp:</b> <code>/get username locket | yyyy-mm-dd</code>\n"
+            "Ví dụ: <code>/get ngdanhthanhtrung | 2026-01-01</code>", 
             parse_mode=ParseMode.HTML
         )
 
-    parts = [p.strip() for p in " ".join(c.args).split("|")]
+    # Tách dữ liệu
+    full_text = " ".join(c.args)
+    parts = [p.strip() for p in full_text.split("|")]
+    
+    # Lấy username gốc để hiển thị và tạo safe_user để đặt tên file trên GitHub
+    raw_username = parts[0]
+    safe_user = "".join(x for x in raw_username if x.isalnum())
+    
+    if not safe_user:
+        return await u.message.reply_text("❌ Username không hợp lệ (vui lòng chỉ dùng chữ và số).")
 
-    safe_user = "".join(x for x in parts[0] if x.isalnum())
-
+    # 2. Xử lý và kiểm tra định dạng ngày tháng
     try:
         raw_date = parts[1].replace("/", "-").replace(".", "-")
         date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
         date_str = date_obj.strftime("%Y-%m-%d")
     except (ValueError, IndexError):
-        return await u.message.reply_text("❌ Ngày không hợp lệ! Vui lòng nhập: <code>Năm-Tháng-Ngày</code>", parse_mode=ParseMode.HTML)
+        return await u.message.reply_text(
+            "❌ Ngày không hợp lệ!\nĐịnh dạng đúng: <code>Năm-Tháng-Ngày</code> (VD: 2026-04-17)", 
+            parse_mode=ParseMode.HTML
+        )
 
-    status = await u.message.reply_text("⏳ Đang xử lý trên Github...")
+    # 3. Tiến hành xử lý với GitHub
+    status = await u.message.reply_text("⏳ <b>Đang khởi tạo Module cá nhân...</b>", parse_mode=ParseMode.HTML)
+    
     try:
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
-        js_p, mod_p = f"{safe_user}/L.js", f"{safe_user}/L.sgmodule"
+
+        js_p, mod_p = f"{safe_user}/Locket.js", f"{safe_user}/LocketGold.sgmodule"
         js_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
-        
+
         js_c = JS_TEMPLATE.format(user=safe_user, date=date_str)
-        mod_c = MODULE_TEMPLATE.format(user=safe_user, js_url=js_url)
-        
+        mod_c = MODULE_TEMPLATE.format(user=raw_username, js_url=js_url)
+
         for p, cnt in [(js_p, js_c), (mod_p, mod_c)]:
             try:
                 f = repo.get_contents(p)
-                repo.update_file(p, f"Update {safe_user}", cnt, f.sha)
+                repo.update_file(p, f"Update module: {safe_user}", cnt, f.sha)
             except:
-                repo.create_file(p, f"Create {safe_user}", cnt)
-                
+                repo.create_file(p, f"Create module: {safe_user}", cnt)
+
         await status.edit_text(
-            f"✅ <b>Tạo thành công!</b>\n\n"
-            f"🔗 <b>Module của bạn:</b>\n"
-            f"<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>"
-            f"\n\n💖 Nếu thấy hữu ích, hãy ủng hộ Admin tại /donate nhé!", 
+            f"✅ <b>TẠO MODULE THÀNH CÔNG!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"👤 <b>Username:</b> <code>{raw_username}</code>\n"
+            f"📅 <b>Hạn dùng:</b> <code>{date_str}</code>\n\n"
+            f"🔗 <b>Link Module của bạn:</b>\n"
+            f"<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>\n\n"
+            f"💖 Nếu thấy hữu ích, hãy ủng hộ Admin tại /donate nhé!", 
             parse_mode=ParseMode.HTML
         )
-    except Exception as e: 
-        await status.edit_text(f"❌ Lỗi kết nối GitHub: {str(e)}")
         
-        
+    except Exception as e:
+        logging.error(f"GitHub Error: {str(e)}")
+        await status.edit_text(f"❌ Lỗi kết nối GitHub: <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+		
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args: return await u.message.reply_text("🛠 Gõ: <code>/nextdns [ID]</code>", parse_mode=ParseMode.HTML)
     dns_id = c.args[0].strip()
