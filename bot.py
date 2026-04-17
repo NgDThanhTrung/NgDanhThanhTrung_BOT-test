@@ -378,7 +378,7 @@ async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>TẠO MODULE THÀNH CÔNG!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"👤 <b>Username:</b> <code>{raw_username}</code>\n"
-            f"📅 <b>Hạn dùng:</b> <code>{date_str}</code>\n\n"
+            f"📅 <b>Ngày tham gia:</b> <code>{date_str}</code>\n\n"
             f"🔗 <b>Link Module của bạn:</b>\n"
             f"<code>https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}</code>\n\n"
             f"💖 Nếu thấy hữu ích, hãy ủng hộ Admin tại /donate nhé!", 
