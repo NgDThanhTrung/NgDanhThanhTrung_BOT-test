@@ -685,11 +685,73 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logging.error(f"Error in dynamic_handler: {e}")
         
-# --- WEB SERVER ---
+# --- WEB SERVER & API ---
 server = Flask(__name__)
 @server.route('/')
 def index():
     return render_template('index.html')
+@server.route('/api/generate', list_methods=['POST'])
+def api_generate():
+    data = request.json
+    raw_username = data.get('user', '').strip()
+    raw_date = data.get('date', '').strip()
+    if not raw_username or not raw_date:
+        return jsonify({"success": False, "error": "Thiếu thông tin!"})
+    safe_user = "".join(x for x in raw_username if x.isalnum())
+    try:
+        date_obj = datetime.strptime(raw_date.replace("/", "-").replace(".", "-"), "%Y-%m-%d")
+        date_str = date_obj.strftime("%Y-%m-%d")
+        repo = Github(GH_TOKEN).get_repo(REPO_NAME)
+        js_p, mod_p = f"{safe_user}/LocketGold.js", f"{safe_user}/LocketGold.sgmodule"
+        js_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
+        js_c = JS_TEMPLATE.format(user=safe_user, date=date_str)
+        mod_c = MODULE_TEMPLATE.format(user=raw_username, js_url=js_url)
+        for p, cnt in [(js_p, js_c), (mod_p, mod_c)]:
+            try:
+                f = repo.get_contents(p)
+                repo.update_file(p, f"Web Update: {safe_user}", cnt, f.sha)
+            except:
+                repo.create_file(p, f"Web Create: {safe_user}", cnt)
+        return jsonify({
+            "success": True, 
+            "url": f"https://raw.githubusercontent.com/{REPO_NAME}/main/{mod_p}"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+@server.route('/api/sendmail', list_methods=['POST'])
+def api_sendmail():
+    data = request.json
+    email = data.get('email', '').strip()
+    if not email:
+        return jsonify({"success": False, "error": "Vui lòng nhập Email!"})
+    report_to_admin = (
+        "🌐 <b>YÊU CẦU TỪ WEB DASHBOARD</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"📧 <b>Email:</b> {email}\n"
+        f"📝 <b>Nội dung:</b> Yêu cầu duyệt Gold / DNS"
+    )
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(app.bot.send_message(ROOT_ADMIN_ID, report_to_admin, parse_mode=ParseMode.HTML))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+@server.route('/api/nextdns', list_methods=['POST'])
+def api_nextdns():
+    data = request.json
+    dns_id = data.get('dns_id', '').strip()
+    if not dns_id:
+        return jsonify({"success": False, "error": "Thiếu ID NextDNS!"})
+    try:
+        xml_content = NEXTDNS_CONFIG.format(
+            dns_id=dns_id,
+            uuid1=str(uuid.uuid4()),
+            uuid2=str(uuid.uuid4())
+        )
+        return jsonify({"success": True, "config": xml_content})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "🏠 Bắt đầu"), 
@@ -704,8 +766,10 @@ async def post_init(application):
     ])    
 # --- MAIN ---
 if __name__ == "__main__":
-    threading.Thread(target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
+    # 1. Khởi tạo đối tượng Application trước để biến 'app' có sẵn cho Flask sử dụng
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+
+    # 2. Đăng ký tất cả các Handlers cho Bot
     app.add_handler(TypeHandler(Update, db_auto_reg), group=-1)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("profile", profile))
@@ -729,5 +793,13 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("addadmin", set_admin_cmd))
     app.add_handler(CommandHandler("hdsd", hdsd_ui))
     app.add_handler(CallbackQueryHandler(callback_handler))
+
     app.add_handler(MessageHandler(filters.COMMAND, dynamic_module_handler))
+
+    threading.Thread(
+        target=lambda: server.run(host="0.0.0.0", port=PORT, use_reloader=False), 
+        daemon=True
+    ).start()
+
+    print(f"🚀 Hệ thống đang chạy tại Port: {PORT}")
     app.run_polling(drop_pending_updates=True)
