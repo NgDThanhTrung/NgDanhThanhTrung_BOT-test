@@ -487,7 +487,19 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
         today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
         active_today = conn.execute("SELECT COUNT(*) FROM users WHERE last_active LIKE ?", (f"{today}%",)).fetchone()[0]
     await u.message.reply_text(f"📊 <b>THỐNG KÊ</b>\n\n👤 Tổng User: {u_c}\n💎 Premium: {p_c}\n📦 Modules: {m_c}\n⚡ Hoạt động hôm nay: {active_today}", parse_mode=ParseMode.HTML)
-
+async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if u.effective_user.id != ROOT_ADMIN_ID:
+        return
+    status_msg = await u.message.reply_text("⏳ Đang dọn dẹp cơ sở dữ liệu thành viên...")
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM users")
+            conn.commit()
+        await status_msg.edit_text("✅ Đã dọn sạch dữ liệu thành viên. Dữ liệu Modules vẫn được giữ nguyên.")
+    except Exception as e:
+        logging.error(f"Clear Error: {e}")
+        await status_msg.edit_text(f"❌ Lỗi khi dọn dẹp: {str(e)}")
 async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     doc = u.message.document
@@ -704,6 +716,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("donedns", done_dns_cmd))
     app.add_handler(CommandHandler("saoluu", backup_data))
     app.add_handler(MessageHandler(filters.Document.FileExtension("xlsx"), restore_data))
+    app.add_handler(CommandHandler("clear", clear_members)) 
     app.add_handler(CommandHandler("approve", approve_user))
     app.add_handler(CommandHandler("send", send_feedback))
     app.add_handler(CommandHandler("revoke", revoke_user))
