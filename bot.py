@@ -653,7 +653,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
     cmd = u.message.text.split()[0][1:].split('@')[0].lower()
-    sys_cmds = ['start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 'stats', 'sendmail', 'donedns', 'saoluu', 'approve', 'send', 'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd']
+    sys_cmds = ['start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 'stats', 'sendmail', 'donedns', 'saoluu', 'approve', 'send', 'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd', 'clear']
     if cmd in sys_cmds:
         return
     try:
@@ -667,16 +667,19 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 f"🔗 <b>ĐƯỜNG DẪN CÀI ĐẶT:</b>\n"
                 f"<code>{url}</code>\n\n"
                 f"🛠 <b>HƯỚNG DẪN CHI TIẾT:</b>\n"
-                f"1️⃣ <b>Sao chép:</b> Chạm vào dòng link phía trên để tự động copy.\n"
+                f"1️⃣ <b>Sao chép:</b> Chạm vào dòng link phía trên (hoặc nút bên dưới) để copy.\n"
                 f"2️⃣ <b>Thêm Module:</b> Mở Shadowrocket/Surge/QuantumultX ➔ Tìm mục <b>Module</b> ➔ Chọn <b>Add Module</b>.\n"
                 f"3️⃣ <b>Dán & Lưu:</b> Dán link đã copy vào và nhấn lưu lại.\n"
                 f"4️⃣ <b>HTTPS Decryption:</b> Phải đảm bảo mục <b>MITM</b> đã được cài đặt chứng chỉ và đang ở trạng thái <b>Bật (ON)</b> thì script mới có hiệu lực.\n\n"
-                f"💡 <i>Lưu ý: Nếu bạn chưa cài chứng chỉ CA, hãy gõ /hdsd để xem cách làm.</i>"
+                f"💡 <i>Lưu ý: Nếu chưa cài chứng chỉ, hãy gõ /hdsd.</i>"
             )
-            kb = [[InlineKeyboardButton(f"📥 Cài đặt {title}", url=url)], [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]]
+            kb = [
+                [InlineKeyboardButton(f"📋 Copy Link {title}", callback_data=f"copyurl_{cmd}")],
+                [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="show_list")]
+            ]
             await u.message.reply_text(text=txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb), disable_web_page_preview=True)
         elif u.effective_chat.type == "private":
-            not_found_txt = f"🔍 <b>Không tìm thấy Module:</b> <code>/{cmd}</code>\n\nVui lòng kiểm tra lại hoặc nhấn nút dưới đây để xem danh sách Module hiện có."
+            not_found_txt = f"🔍 <b>Không tìm thấy Module:</b> <code>/{cmd}</code>\n\nNhấn nút dưới để xem danh sách."
             kb = [[InlineKeyboardButton("📂 Xem danh sách Module", callback_data="show_list")]]
             await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
