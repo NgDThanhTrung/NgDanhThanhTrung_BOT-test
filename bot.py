@@ -487,6 +487,41 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
         today = datetime.now(VN_TZ).strftime("%Y-%m-%d")
         active_today = conn.execute("SELECT COUNT(*) FROM users WHERE last_active LIKE ?", (f"{today}%",)).fetchone()[0]
     await u.message.reply_text(f"📊 <b>THỐNG KÊ</b>\n\n👤 Tổng User: {u_c}\n💎 Premium: {p_c}\n📦 Modules: {m_c}\n⚡ Hoạt động hôm nay: {active_today}", parse_mode=ParseMode.HTML)
+
+async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(u.effective_user.id): return
+    doc = u.message.document
+    if not doc.file_name.endswith(".xlsx"): return
+    status_msg = await u.message.reply_text("⏳ Đang phân tích và khôi phục dữ liệu...")
+    try:
+        file = await c.bot.get_file(doc.file_id)
+        file_bytes = await file.download_as_bytearray()
+        df_u = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Thành Viên')
+        df_m = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Danh Sách Modules')
+        with sqlite3.connect(DB_PATH) as conn:
+            for _, row in df_u.iterrows():
+                conn.execute('''
+                    INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count, is_premium)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        full_name=excluded.full_name,
+                        username=excluded.username,
+                        last_active=excluded.last_active,
+                        interact_count=max(users.interact_count, excluded.interact_count),
+                        is_premium=max(users.is_premium, excluded.is_premium)
+                ''', (str(row['user_id']), row['full_name'], row['username'], row['join_date'], 
+                      row['last_active'], row['interact_count'], row['is_premium']))
+            for _, row in df_m.iterrows():
+                conn.execute('''
+                    INSERT INTO modules (key, title, url)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET title=excluded.title, url=excluded.url
+                ''', (row['key'], row['title'], row['url']))
+            conn.commit()
+        await status_msg.edit_text(f"✅ Khôi phục thành công!\n- {len(df_u)} Users\n- {len(df_m)} Modules")
+    except Exception as e:
+        logging.error(f"Restore Error: {e}")
+        await status_msg.edit_text(f"❌ Lỗi khôi phục: {str(e)}")
 async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     status_msg = await u.message.reply_text("⏳ Đang xuất dữ liệu...")
@@ -668,6 +703,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("sendmail", send_mail_to_admin))
     app.add_handler(CommandHandler("donedns", done_dns_cmd))
     app.add_handler(CommandHandler("saoluu", backup_data))
+    app.add_handler(MessageHandler(filters.Document.FileExtension("xlsx"), restore_data))
     app.add_handler(CommandHandler("approve", approve_user))
     app.add_handler(CommandHandler("send", send_feedback))
     app.add_handler(CommandHandler("revoke", revoke_user))
