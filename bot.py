@@ -690,7 +690,7 @@ server = Flask(__name__)
 @server.route('/')
 def index():
     return render_template('index.html')
-@server.route('/api/generate', list_methods=['POST'])
+@server.route('/api/generate', methods=['POST'])
 def api_generate():
     data = request.json
     raw_username = data.get('user', '').strip()
@@ -718,7 +718,7 @@ def api_generate():
         })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-@server.route('/api/sendmail', list_methods=['POST'])
+@server.route('/api/sendmail', methods=['POST'])
 def api_sendmail():
     data = request.json
     email = data.get('email', '').strip()
@@ -737,7 +737,7 @@ def api_sendmail():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-@server.route('/api/nextdns', list_methods=['POST'])
+@server.route('/api/nextdns', methods=['POST'])
 def api_nextdns():
     data = request.json
     dns_id = data.get('dns_id', '').strip()
@@ -766,7 +766,6 @@ async def post_init(application):
     ])    
 # --- MAIN ---
 if __name__ == "__main__":
-    # 1. Khởi tạo đối tượng Application trước để biến 'app' có sẵn cho Flask sử dụng
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     # 2. Đăng ký tất cả các Handlers cho Bot
