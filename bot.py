@@ -856,13 +856,13 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
 async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if u.effective_user.id != ROOT_ADMIN_ID:[cite: 3]
+    if u.effective_user.id != ROOT_ADMIN_ID:
         return
-    await u.message.reply_text("📦 <b>Hệ thống đang tự động sao lưu dữ liệu trước khi dọn dẹp...</b>", parse_mode=ParseMode.HTML)[cite: 3]
+    await u.message.reply_text("📦 <b>Hệ thống đang tự động sao lưu dữ liệu trước khi dọn dẹp...</b>", parse_mode=ParseMode.HTML)
     try:
-        await backup_data(u, c)[cite: 3]
+        await backup_data(u, c)
     except Exception as e:
-        return await u.message.reply_text(f"❌ <b>Dừng dọn dẹp:</b> Lỗi sao lưu dữ liệu (<code>{e}</code>). Vui lòng kiểm tra lại!", parse_mode=ParseMode.HTML)[cite: 3]
+        return await u.message.reply_text(f"❌ <b>Dừng dọn dẹp:</b> Lỗi sao lưu dữ liệu (<code>{e}</code>). Vui lòng kiểm tra lại!", parse_mode=ParseMode.HTML)
     status_msg = await u.message.reply_text("⏳ <b>Đang dọn dẹp cơ sở dữ liệu thành viên...</b>", parse_mode=ParseMode.HTML)
     try:
         with sqlite3.connect(DB_PATH) as conn:
