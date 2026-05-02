@@ -857,6 +857,7 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
 async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.effective_user.id != ROOT_ADMIN_ID:
+        await u.message.reply_text("❌ Bạn không có quyền thực hiện lệnh này.")
         return
     status_msg = await u.message.reply_text("⏳ <b>Đang tiến hành dọn dẹp cơ sở dữ liệu...</b>", parse_mode=ParseMode.HTML)
     try:
@@ -866,6 +867,7 @@ async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
             cursor.execute("DELETE FROM users")
             cursor.execute("DELETE FROM sqlite_sequence WHERE name='users'")
             conn.commit()
+            conn.execute("VACUUM") 
         await status_msg.edit_text(
             f"✅ <b>DỌN DẸP HOÀN TẤT!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
