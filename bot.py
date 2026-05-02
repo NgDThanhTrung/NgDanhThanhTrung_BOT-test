@@ -856,10 +856,14 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
 async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if u.effective_user.id != ROOT_ADMIN_ID:
-        await u.message.reply_text("❌ Bạn không có quyền thực hiện lệnh này.")
+    if u.effective_user.id != ROOT_ADMIN_ID:[cite: 3]
         return
-    status_msg = await u.message.reply_text("⏳ <b>Đang tiến hành dọn dẹp cơ sở dữ liệu...</b>", parse_mode=ParseMode.HTML)
+    await u.message.reply_text("📦 <b>Hệ thống đang tự động sao lưu dữ liệu trước khi dọn dẹp...</b>", parse_mode=ParseMode.HTML)[cite: 3]
+    try:
+        await backup_data(u, c)[cite: 3]
+    except Exception as e:
+        return await u.message.reply_text(f"❌ <b>Dừng dọn dẹp:</b> Lỗi sao lưu dữ liệu (<code>{e}</code>). Vui lòng kiểm tra lại!", parse_mode=ParseMode.HTML)[cite: 3]
+    status_msg = await u.message.reply_text("⏳ <b>Đang dọn dẹp cơ sở dữ liệu thành viên...</b>", parse_mode=ParseMode.HTML)
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
@@ -867,17 +871,17 @@ async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
             cursor.execute("DELETE FROM users")
             cursor.execute("DELETE FROM sqlite_sequence WHERE name='users'")
             conn.commit()
-            conn.execute("VACUUM") 
+            conn.execute("VACUUM")
         await status_msg.edit_text(
             f"✅ <b>DỌN DẸP HOÀN TẤT!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"🗑 Đã xóa: <code>{count}</code> thành viên.\n"
-            f"📦 Dữ liệu Modules: <b>Vẫn giữ nguyên.</b>",
+            f"📂 File sao lưu đã được gửi ở trên.",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
         logging.error(f"Clear Members Error: {e}")
-        await status_msg.edit_text(f"❌ <b>Lỗi hệ thống:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+        await status_msg.edit_text(f"❌ <b>Lỗi hệ thống khi xóa:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     doc = u.message.document
