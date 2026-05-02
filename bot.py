@@ -1219,22 +1219,19 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             title_raw, url = res['title'], res['url']
             titles = title_raw.split("/")
             display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
-            shadow_link = f"shadowrocket://config/add/{url}"
             if lang == 'vi':
                 txt = (
                     f"<b>{display_title}</b>\n\n"
-                    f"Link Module:\n<code>{url}</code>\n\n"
-                    f"🚀 <b>Cài đặt nhanh (Chạm để copy):</b>\n"
-                    f"<code>{shadow_link}</code>\n\n"
-                    f"<i>Sau khi copy, hãy mở ứng dụng Shadowrocket để thêm cấu hình.</i>"
+                    f"🔗 <b>Link Module (Chạm để copy):</b>\n"
+                    f"<code>{url}</code>\n\n"
+                    f"<i>Sau khi copy, hãy dán vào Shadowrocket để cài đặt.</i>"
                 )
             else:
                 txt = (
                     f"<b>{display_title}</b>\n\n"
-                    f"Module Link:\n<code>{url}</code>\n\n"
-                    f"🚀 <b>Quick Install (Tap to copy):</b>\n"
-                    f"<code>{shadow_link}</code>\n\n"
-                    f"<i>After copying, open the Shadowrocket app to add the config.</i>"
+                    f"🔗 <b>Module Link (Tap to copy):</b>\n"
+                    f"<code>{url}</code>\n\n"
+                    f"<i>After copying, paste it into Shadowrocket to install.</i>"
                 )
             btn_list_text = s.get('btn_show_list', "📂 View List")
             kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
