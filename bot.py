@@ -52,6 +52,10 @@ STRINGS = {
         'mod_guide': "<b>{title}</b>\n\nLink cài đặt: <code>{url}</code>",
         'mod_not_found': "Không tìm thấy module: {cmd}",
         'btn_show_list': "📂 Xem danh sách Module",
+        'mod_guide': "<b>{title}</b>\n\nLink: <code>{url}</code>\n\n<i>Bấm nút bên dưới để cài đặt nhanh vào Shadowrocket.</i>",
+        'mod_not_found': "❌ Không tìm thấy module: <b>{cmd}</b>",
+        'btn_show_list': "📂 Danh sách Module",
+        'btn_install': "🚀 Cài đặt {title}",
         
         # --- Menu Chính (hàm start) ---
         'welcome': (
@@ -183,6 +187,10 @@ STRINGS = {
         'mod_guide': "<b>{title}</b>\n\nInstall link: <code>{url}</code>",
         'mod_not_found': "Module not found: {cmd}",
         'btn_show_list': "📂 View Module List",
+        'mod_guide': "<b>{title}</b>\n\nLink: <code>{url}</code>\n\n<i>Click the button below to quickly install into Shadowrocket.</i>",
+        'mod_not_found': "❌ Module not found: <b>{cmd}</b>",
+        'btn_show_list': "📂 Module List",
+        'btn_install': "🚀 Install {title}",
         
         # --- Main Menu ---
         'welcome': (
@@ -1196,7 +1204,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sys_cmds = [
         'start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 
         'stats', 'sendmail', 'donedns', 'saoluu', 'approve', 'send', 
-        'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd', 'clear'
+        'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd', 'clear', 'restore'
     ]
     if cmd in sys_cmds:
         return
@@ -1206,15 +1214,21 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
-            res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
+            res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
         if res:
             title_raw, url = res['title'], res['url']
             titles = title_raw.split("/")
-            display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
+            if lang == 'en' and len(titles) > 1:
+                display_title = titles[1].strip().upper()
+            else:
+                display_title = titles[0].strip().upper()
+            shadowrocket_link = f"shadowrocket://config/add/{url}"
             txt = s['mod_guide'].format(title=display_title, url=url)
+            btn_install_text = s.get('btn_install', "🚀 Install {title}").format(title=display_title)
+            btn_list_text = s.get('btn_show_list', "📂 View List")
             kb = [
-                [InlineKeyboardButton(f"📋 Copy {display_title}", callback_data=f"copyurl_{cmd}")],
-                [InlineKeyboardButton(s['btn_show_list'], callback_data="show_list")]
+                [InlineKeyboardButton(btn_install_text, url=shadowrocket_link)],
+                [InlineKeyboardButton(btn_list_text, callback_data="show_list")]
             ]
             await u.message.reply_text(
                 text=txt, 
@@ -1223,11 +1237,16 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 disable_web_page_preview=True
             )
         elif u.effective_chat.type == "private":
-            not_found_txt = s['mod_not_found'].format(cmd=cmd)
-            kb = [[InlineKeyboardButton(s['btn_show_list'], callback_data="show_list")]]
-            await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
+            not_found_txt = s.get('mod_not_found', "❌ Module not found: {cmd}").format(cmd=cmd)
+            btn_list_text = s.get('btn_show_list', "📂 List")
+            kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
+            await u.message.reply_text(
+                text=not_found_txt, 
+                parse_mode=ParseMode.HTML, 
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
     except Exception as e:
-        logging.error(f"Error in dynamic_handler: {e}")
+        logging.error(f"Error in dynamic_module_handler: {e}")
         
 # --- WEB SERVER & API ---
 server = Flask(__name__)
