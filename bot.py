@@ -523,14 +523,14 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     lang = get_lang(uid)
     with sqlite3.connect(DB_PATH) as conn:
         res = conn.execute("SELECT language FROM users WHERE user_id = ?", (uid,)).fetchone()
-        if not res or res[0] == 'none':
-            kb = [
-                [
-                    InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
-                    InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
-                ]
+    if not res or res[0] == 'none':
+        kb = [
+            [
+                InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
+                InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
             ]
-            return await send_ui(u, STRINGS['vi']['lang_select'], kb)
+        ]
+        return await send_ui(u, STRINGS['vi']['lang_select'], kb)
     s = STRINGS[lang]
     txt = s['welcome'].format(
         name=u.effective_user.first_name, 
@@ -1147,16 +1147,16 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
     data = query.data
     await query.answer()
-    if data.startswith("setlang_"):
-        lang_code = data.split("_")[-1]
-        uid = u.effective_user.id
+    uid = str(query.from_user.id)
+    if data.startswith("set_lang_") or data.startswith("setlang_"):
+        new_lang = data.split("_")[-1]
         with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (str(uid), lang_code))
-            conn.commit()[cite: 1]
+            conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (new_lang, uid))
+            conn.commit()
         try:
             await query.delete_message()
         except Exception as e:
-            logging.error(f"Lỗi khi xóa tin nhắn ngôn ngữ: {e}")
+            logging.error(f"Không thể xóa tin nhắn: {e}")
         return await start(u, c)
     if data == "show_list":
         await send_module_list(u, c)
@@ -1173,6 +1173,16 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
     elif data == "admin_panel":
         await admin_panel(u, c)
+    elif data.startswith("done_req_"):
+        target_uid = data.split("_")[-1]
+        admin_txt = (
+            f"📩 <b>TIẾN HÀNH TRẢ KẾT QUẢ</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Người dùng: <code>{target_uid}</code>\n\n"
+            f"Hãy dùng lệnh dưới đây để gửi mã DNS cho họ:\n"
+            f"<code>/donedns {target_uid} | [MÃ_DNS_TẠI_ĐÂY]</code>"
+        )
+        await c.bot.send_message(chat_id=ROOT_ADMIN_ID, text=admin_txt, parse_mode=ParseMode.HTML)
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
