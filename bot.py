@@ -1297,11 +1297,11 @@ async def post_init(application):
         BotCommand("donate", "💰 Support Admin"),
         BotCommand("admin", "🛠 Admin Panel")
     ]
-    await application.bot.set_my_commands(commands_vi).
+    await application.bot.set_my_commands(commands_vi)
     try:
         await application.bot.set_my_commands(commands_en, language_code='en')
     except Exception as e:
-        print(f"Lỗi set menu English: {e}")
+        logging.error(f"Error setting English commands: {e}")
         
 # --- MAIN ---
 if __name__ == "__main__":
