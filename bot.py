@@ -1218,18 +1218,26 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if res:
             title_raw, url = res['title'], res['url']
             titles = title_raw.split("/")
-            if lang == 'en' and len(titles) > 1:
-                display_title = titles[1].strip().upper()
+            display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
+            shadow_link = f"shadowrocket://config/add/{url}"
+            if lang == 'vi':
+                txt = (
+                    f"<b>{display_title}</b>\n\n"
+                    f"Link Module:\n<code>{url}</code>\n\n"
+                    f"🚀 <b>Cài đặt nhanh (Chạm để copy):</b>\n"
+                    f"<code>{shadow_link}</code>\n\n"
+                    f"<i>Sau khi copy, hãy mở ứng dụng Shadowrocket để thêm cấu hình.</i>"
+                )
             else:
-                display_title = titles[0].strip().upper()
-            shadowrocket_link = f"shadowrocket://config/add/{url}"
-            txt = s['mod_guide'].format(title=display_title, url=url)
-            btn_install_text = s.get('btn_install', "🚀 Install {title}").format(title=display_title)
+                txt = (
+                    f"<b>{display_title}</b>\n\n"
+                    f"Module Link:\n<code>{url}</code>\n\n"
+                    f"🚀 <b>Quick Install (Tap to copy):</b>\n"
+                    f"<code>{shadow_link}</code>\n\n"
+                    f"<i>After copying, open the Shadowrocket app to add the config.</i>"
+                )
             btn_list_text = s.get('btn_show_list', "📂 View List")
-            kb = [
-                [InlineKeyboardButton(btn_install_text, url=shadowrocket_link)],
-                [InlineKeyboardButton(btn_list_text, callback_data="show_list")]
-            ]
+            kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
             await u.message.reply_text(
                 text=txt, 
                 parse_mode=ParseMode.HTML, 
@@ -1240,11 +1248,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             not_found_txt = s.get('mod_not_found', "❌ Module not found: {cmd}").format(cmd=cmd)
             btn_list_text = s.get('btn_show_list', "📂 List")
             kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
-            await u.message.reply_text(
-                text=not_found_txt, 
-                parse_mode=ParseMode.HTML, 
-                reply_markup=InlineKeyboardMarkup(kb)
-            )
+            await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
     except Exception as e:
         logging.error(f"Error in dynamic_module_handler: {e}")
         
