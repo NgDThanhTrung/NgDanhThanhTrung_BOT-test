@@ -49,6 +49,9 @@ STRINGS = {
             "4️⃣ <b>HTTPS Decryption:</b> Đảm bảo <b>MITM</b> đã bật chứng chỉ (ON) để script có hiệu lực.\n\n"
             "💡 <i>Lưu ý: Nếu chưa cài chứng chỉ, hãy gõ /hdsd.</i>"
         ),
+        'mod_guide': "<b>{title}</b>\n\nLink cài đặt: <code>{url}</code>",
+        'mod_not_found': "Không tìm thấy module: {cmd}",
+        'btn_show_list': "📂 Xem danh sách Module",
         
         # --- Menu Chính (hàm start) ---
         'welcome': (
@@ -177,6 +180,9 @@ STRINGS = {
             "4️⃣ <b>HTTPS Decryption:</b> Ensure <b>MITM</b> certificate is ON for the script to work.\n\n"
             "💡 <i>Note: If certificates are not installed, type /hdsd.</i>"
         ),
+        'mod_guide': "<b>{title}</b>\n\nInstall link: <code>{url}</code>",
+        'mod_not_found': "Module not found: {cmd}",
+        'btn_show_list': "📂 View Module List",
         
         # --- Main Menu ---
         'welcome': (
