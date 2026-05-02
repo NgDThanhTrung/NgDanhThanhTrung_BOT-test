@@ -1199,9 +1199,10 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     s = STRINGS[lang]
     try:
         with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
             res = conn.execute("SELECT title, url FROM modules WHERE key = ?", (cmd,)).fetchone()
         if res:
-            title_raw, url = res
+            title_raw, url = res['title'], res['url']
             titles = title_raw.split("/")
             display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
             txt = s['mod_guide'].format(title=display_title, url=url)
@@ -1216,7 +1217,6 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 disable_web_page_preview=True
             )
         elif u.effective_chat.type == "private":
-            # Nếu không tìm thấy module trong chat riêng tư
             not_found_txt = s['mod_not_found'].format(cmd=cmd)
             kb = [[InlineKeyboardButton(s['btn_show_list'], callback_data="show_list")]]
             await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
