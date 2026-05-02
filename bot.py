@@ -1147,6 +1147,17 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
     data = query.data
     await query.answer()
+    if data.startswith("setlang_"):
+        lang_code = data.split("_")[-1]
+        uid = u.effective_user.id
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (str(uid), lang_code))
+            conn.commit()[cite: 1]
+        try:
+            await query.delete_message()
+        except Exception as e:
+            logging.error(f"Lỗi khi xóa tin nhắn ngôn ngữ: {e}")
+        return await start(u, c)
     if data == "show_list":
         await send_module_list(u, c)
     elif data.startswith("list_page_"):
@@ -1162,13 +1173,6 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
     elif data == "admin_panel":
         await admin_panel(u, c)
-    elif data.startswith("setlang_"):
-        lang_code = data.split("_")[-1] # 'vi' hoặc 'en'
-        uid = u.effective_user.id
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang_code, uid))
-            conn.commit()
-        await start(u, c)
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
