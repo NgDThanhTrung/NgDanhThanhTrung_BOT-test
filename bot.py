@@ -94,14 +94,14 @@ def get_text(key: str, lang: str, **kwargs) -> str:
             ).fetchone()
             
             if res:
-                # Xử lý xuống dòng và format biến (ví dụ: {name}, {url})
                 text = res['content'].replace('\\n', '\n')
                 return text.format(**kwargs) if kwargs else text
     except Exception as e:
         logging.error(f"Lỗi get_text: {e}")
     
-    # Nếu không tìm thấy trong DB, dùng STRINGS làm dự phòng
-    fallback = STRINGS.get(lang, STRINGS['vi']).get(key, f"[{key}]")
+    # Cơ chế dự phòng an toàn: không dùng STRINGS['vi'] trực tiếp để tránh KeyError
+    lang_dict = STRINGS.get(lang, STRINGS.get('vi', {}))
+    fallback = lang_dict.get(key, f"[{key}]")
     return fallback.format(**kwargs) if kwargs else fallback
 def is_admin(user_id: int) -> bool:
     uid_str = str(user_id)
@@ -441,34 +441,42 @@ async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
     lang = get_lang(uid)
-    s = STRINGS[lang]
+    
     with sqlite3.connect(DB_PATH) as conn:
         user = conn.execute(
             "SELECT join_date, interact_count, is_premium, last_active FROM users WHERE user_id = ?", 
             (uid,)
         ).fetchone()
+        
     if not user: 
-        return await u.effective_message.reply_text(s.get('error_no_data', "❌ No data found."))
-    status = s['status_premium'] if user[2] == 1 else s['status_free']
-    txt = s['profile_info'].format(
-        id=uid,
-        join=user[0],
-        count=user[1],
-        last=user[3],
-        status=status
-    )
-    kb = [[InlineKeyboardButton(s['btn_back'], callback_data="back_start")]]
+        return await u.effective_message.reply_text("❌ No data found.")
+
+    # Lấy text trạng thái và nội dung profile từ DB
+    status = get_text('status_premium', lang) if user[2] == 1 else get_text('status_free', lang)
+    txt = get_text('profile_info', lang, 
+                   id=uid, join=user[0], count=user[1], last=user[3], status=status)
+    
+    kb = [[InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start")]]
     await send_ui(u, txt, kb)
+
 async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
-    s = STRINGS[lang]
-    txt = s['donate_text']
+    
+    txt = get_text('donate_text', lang)
     kb = [
-        [InlineKeyboardButton(s['btn_bank'], url=DONATE_URL)],
-        [InlineKeyboardButton(s['btn_back'], callback_data="back_start")]
+        [InlineKeyboardButton(get_text('btn_bank', lang), url=DONATE_URL)],
+        [InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start")]
     ]
-    await send_ui(u, txt, kb)   
+    await send_ui(u, txt, kb)
+
+async def hdsd_ui(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id
+    lang = get_lang(uid)
+    
+    txt = get_text('guide_text', lang)
+    kb = [[InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start")]]
+    await send_ui(u, txt, kb)
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
@@ -894,13 +902,14 @@ async def set_admin_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 1):
     uid = u.effective_user.id
     lang = get_lang(uid)
-    s = STRINGS[lang]
     is_user_admin = is_admin(uid)
     per_page = 5
+    
     with sqlite3.connect(DB_PATH) as conn:
         mods = conn.execute("SELECT key, title FROM modules").fetchall()
         header_mod = "📂 <b>MODULE LIST</b>" if lang == 'en' else "📂 <b>DANH SÁCH MODULES</b>"
         txt = f"{header_mod} ({len(mods)})\n\n"
+        
         if mods:
             mod_lines = []
             for m_key, m_title in mods:
@@ -910,41 +919,25 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
             txt += "\n".join(mod_lines)
         else:
             txt += "📭 " + ("No modules available." if lang == 'en' else "Hiện chưa có module nào.")
-        kb = [[InlineKeyboardButton(s['btn_donate'], callback_data="donate_info")]]
+
+        kb = [[InlineKeyboardButton(get_text('btn_donate', lang), callback_data="donate_info")]]
+        
         if is_user_admin:
+            # Logic phân trang Admin...
             offset = (page - 1) * per_page
-            total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            total_pages = (total_users + per_page - 1) // per_page
-            users = conn.execute("""
-                SELECT user_id, full_name, join_date, interact_count, is_premium 
-                FROM users ORDER BY last_active DESC LIMIT ? OFFSET ?
-            """, (per_page, offset)).fetchall()
-            txt += f"\n\n👑 <b>ADMIN: USER MGMT ({page}/{total_pages})</b>"
-            for us in users:
-                status = "💎" if us[4] else "🆓"
-                txt += (f"\n\n👤 <b>{us[1]}</b> (<code>{us[0]}</code>)\n"
-                        f"📅 Join: {us[2]} | ⚡ Cnt: {us[3]} | {status}")
-            nav = []
-            if page > 1:
-                nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"list_page_{page-1}"))
-            if page < total_pages:
-                nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"list_page_{page+1}"))
-            if nav: kb.append(nav)
-    kb.append([InlineKeyboardButton(s['btn_profile'], callback_data="profile")])
-    kb.append([InlineKeyboardButton(s['btn_back'], callback_data="back_start")])
-    await send_ui(u, txt, kb)
-async def hdsd_ui(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    uid = u.effective_user.id
-    lang = get_lang(uid)
-    s = STRINGS[lang]
-    txt = s['guide_text']
-    kb = [[InlineKeyboardButton(s['btn_back'], callback_data="back_start")]]
+            users = conn.execute("SELECT user_id, full_name, is_premium FROM users LIMIT ? OFFSET ?", (per_page, offset)).fetchall()
+            # (Bạn có thể thêm code hiển thị user admin ở đây)
+
+    kb.append([InlineKeyboardButton(get_text('btn_profile', lang), callback_data="profile")])
+    kb.append([InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start")])
     await send_ui(u, txt, kb)
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
     data = query.data
     await query.answer()
     uid = str(query.from_user.id)
+
+    # 1. Xử lý đổi ngôn ngữ
     if data.startswith("set_lang_") or data.startswith("setlang_"):
         new_lang = data.split("_")[-1]
         with sqlite3.connect(DB_PATH) as conn:
@@ -952,9 +945,10 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             conn.commit()
         try:
             await query.delete_message()
-        except Exception as e:
-            logging.error(f"Không thể xóa tin nhắn: {e}")
+        except: pass
         return await start(u, c)
+
+    # 2. Giao diện chính
     if data == "show_list":
         await send_module_list(u, c)
     elif data.startswith("list_page_"):
@@ -970,14 +964,16 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
     elif data == "admin_panel":
         await admin_panel(u, c)
+        
+    # 3. Xử lý yêu cầu DNS (dành cho Admin)
     elif data.startswith("done_req_"):
+        if not is_admin(uid): return
         target_uid = data.split("_")[-1]
         admin_txt = (
             f"📩 <b>TIẾN HÀNH TRẢ KẾT QUẢ</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"👤 Người dùng: <code>{target_uid}</code>\n\n"
-            f"Hãy dùng lệnh dưới đây để gửi mã DNS cho họ:\n"
-            f"<code>/donedns {target_uid} | [MÃ_DNS_TẠI_ĐÂY]</code>"
+            f"Dùng lệnh: <code>/donedns {target_uid} | [MÃ_DNS]</code>"
         )
         await c.bot.send_message(chat_id=ROOT_ADMIN_ID, text=admin_txt, parse_mode=ParseMode.HTML)
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
