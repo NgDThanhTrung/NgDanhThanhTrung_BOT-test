@@ -538,30 +538,44 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
             
 # --- ADMIN FUNCTIONS ---
 async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(u.effective_user.id): 
-        return
-    uid = u.effective_user.id
-    lang = get_lang(uid)
-    s = STRINGS[lang]
+    """
+    Hiển thị bảng điều khiển dành riêng cho Quản trị viên.
+    Phân loại rõ ràng các nhóm lệnh để dễ quản lý.
+    """
+    user_id = u.effective_user.id
+    if not is_admin(user_id):
+        return 
+    lang = get_lang(user_id)
     txt = (
         "🛠 <b>BẢNG ĐIỀU KHIỂN QUẢN TRỊ VIÊN</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        "📊 <b>Thống kê & Hệ thống:</b>\n"
-        "• <code>/stats</code>: Xem tổng User, Premium và Modules.\n"
-        "• <code>/saoluu</code>: Xuất file Excel backup toàn bộ dữ liệu.\n"
-        "• <code>/broadcast [nội dung]</code>: Gửi thông báo tới toàn bộ người dùng.\n\n"
+        "📊 <b>Hệ thống & Thống kê:</b>\n"
+        "• <code>/stats</code>: Xem chi tiết người dùng & hoạt động.\n"
+        "• <code>/saoluu</code>: Xuất file Excel (Backup) dữ liệu.\n"
+        "• <i>(Gửi file .xlsx để Restore dữ liệu hệ thống)</i>\n"
+        "• <code>/broadcast [nội dung]</code>: Gửi tin nhắn toàn hệ thống.\n\n"
+        
         "👤 <b>Quản lý Người dùng:</b>\n"
-        "• <code>/approve [ID]</code>: Cấp quyền <b>Premium</b> cho người dùng.\n"
+        "• <code>/approve [ID]</code>: Kích hoạt <b>Premium</b>.\n"
         "• <code>/revoke [ID]</code>: Thu hồi quyền Premium.\n"
-        "• <code>/addadmin [ID]</code>: Cấp quyền <b>Admin</b> (Chỉ Root Admin).\n\n"
-        "📦 <b>Quản lý Modules:</b>\n"
+        "• <code>/addadmin [ID]</code>: Cấp quyền <b>Admin</b> (Root).\n"
+        "• <code>/donedns [ID] | [Mã]</code>: Trả kết quả DNS cho khách.\n\n"
+        
+        "📦 <b>Quản lý Nội dung (Modules):</b>\n"
         "• <code>/setlink key | title | url</code>: Thêm/Sửa module.\n"
-        "• <code>/delmodule [key]</code>: Xóa module khỏi hệ thống.\n\n"   
-        "💡 <i>Mẹo: Nhấn vào ID người dùng để copy nhanh khi xử lý lệnh.</i>"
+        "• <code>/delmodule [key]</code>: Xóa module khỏi hệ thống.\n"
+        "• <code>/clear</code>: Dọn dẹp danh sách User (Cẩn thận!).\n\n"
+        
+        "💡 <i>Mẹo: Chạm vào các ID hoặc mã lệnh để sao chép nhanh.</i>"
     )
+    btn_back_label = get_text('btn_back', lang)
+    if btn_back_label == "[btn_back]": btn_back_label = "⬅️ Quay lại Menu"
     kb = [
-        [InlineKeyboardButton("📂 Danh sách & Quản lý User", callback_data="show_list")],
-        [InlineKeyboardButton(s['btn_back'], callback_data="back_start")] 
+        [
+            InlineKeyboardButton("📊 Stats", callback_data="admin_stats_quick"), # Thêm nếu bạn muốn xử lý callback
+            InlineKeyboardButton("📂 User List", callback_data="show_list")
+        ],
+        [InlineKeyboardButton(btn_back_label, callback_data="back_start")]
     ]
     await send_ui(u, txt, kb)
 async def revoke_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
