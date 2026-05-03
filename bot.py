@@ -308,7 +308,7 @@ def init_db():
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
         
-        # BỔ SUNG: Tạo bảng lưu trữ chuỗi dịch thuật
+        # Bổ sung: Bảng lưu trữ chuỗi dịch thuật
         cursor.execute('''CREATE TABLE IF NOT EXISTS translations (
             string_key TEXT,
             lang TEXT,
@@ -326,33 +326,53 @@ def init_db():
             is_premium INTEGER DEFAULT 0,
             language TEXT DEFAULT 'none'
         )''')
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS modules (
             key TEXT PRIMARY KEY,
             title TEXT,
             url TEXT
         )''')
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
             user_id TEXT PRIMARY KEY,
             added_at TEXT
         )''')
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if 'language' not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'none'")    
+        
         conn.commit()
+
+        # TỰ ĐỘNG NẠP DỮ LIỆU TỪ STRINGS VÀO DATABASE NẾU TRỐNG
+        cursor.execute("SELECT COUNT(*) FROM translations")
+        if cursor.fetchone()[0] == 0:
+            logging.info("🚚 Đang nạp dữ liệu dịch thuật vào Database...")
+            for lang, keys in STRINGS.items():
+                for key, content in keys.items():
+                    cursor.execute(
+                        "INSERT OR IGNORE INTO translations (string_key, lang, content) VALUES (?, ?, ?)",
+                        (key, lang, content)
+                    )
+            conn.commit()
 init_db()
 # --- HELPERS ---
-def get_text(key: str, lang: str) -> str:
-    """Lấy nội dung văn bản từ database thay vì biến STRINGS cứng"""
+def get_text(key: str, lang: str, **kwargs) -> str:
+    """Lấy nội dung văn bản từ database và format biến nếu có."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
-            res = conn.execute("SELECT content FROM translations WHERE string_key = ? AND lang = ?", (key, lang)).fetchone()
+            res = conn.execute(
+                "SELECT content FROM translations WHERE string_key = ? AND lang = ?", 
+                (key, lang)
+            ).fetchone()
+            
             if res:
-                return res['content'].replace('\\n', '\n') # Hỗ trợ xuống dòng
-    except:
-        pass
-    return f"[{key}]" 
+                # Xử lý xuống dòng và format biến (ví dụ: {name}, {url})
+                text = res['content'].replace('\\n', '\n')
+                return text.format(**kwargs) if kwargs else text
+    except Exception as e:
+        logging.error(f"Lỗi get_text: {e}")
+    
+    # Nếu không tìm thấy trong DB, dùng STRINGS làm dự phòng
+    fallback = STRINGS.get(lang, STRINGS['vi']).get(key, f"[{key}]")
+    return fallback.format(**kwargs) if kwargs else fallback
 def is_admin(user_id: int) -> bool:
     uid_str = str(user_id)
     if uid_str == str(ROOT_ADMIN_ID): 
@@ -555,30 +575,26 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
     await db_auto_reg(u, c)
     lang = get_lang(uid)
-    with sqlite3.connect(DB_PATH) as conn:
-        res = conn.execute("SELECT language FROM users WHERE user_id = ?", (uid,)).fetchone()
-    if not res or res[0] == 'none':
-        kb = [
-            [
-                InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
-                InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
-            ]
-        ]
-        return await send_ui(u, STRINGS['vi']['lang_select'], kb)
-    s = STRINGS[lang]
-    txt = s['welcome'].format(
-        name=u.effective_user.first_name, 
-        url=KOYEB_URL
-    )
+    
+    # Kiểm tra nếu chưa chọn ngôn ngữ
+    if lang == 'none' or not lang:
+        kb = [[
+            InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
+            InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
+        ]]
+        return await send_ui(u, get_text('lang_select', 'vi'), kb)
+
+    # Hiển thị Menu chính với thông tin cá nhân hóa
+    txt = get_text('welcome', lang, name=u.effective_user.first_name, url=KOYEB_URL)
     kb = [
-        [InlineKeyboardButton(s['btn_list'], callback_data="show_list")],
+        [InlineKeyboardButton(get_text('btn_list', lang), callback_data="show_list")],
         [
-            InlineKeyboardButton(s['btn_profile'], callback_data="profile"), 
-            InlineKeyboardButton(s['btn_donate'], callback_data="donate_info")
+            InlineKeyboardButton(get_text('btn_profile', lang), callback_data="profile"), 
+            InlineKeyboardButton(get_text('btn_donate', lang), callback_data="donate_info")
         ],
         [
-            InlineKeyboardButton(s['btn_guide'], callback_data="hdsd"), 
-            InlineKeyboardButton(s['btn_contact'], url=CONTACT_URL)
+            InlineKeyboardButton(get_text('btn_guide', lang), callback_data="hdsd"), 
+            InlineKeyboardButton(get_text('btn_contact', lang), url=CONTACT_URL)
         ]
     ]
     await send_ui(u, txt, kb)
@@ -726,53 +742,47 @@ async def donate_info(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def get_bundle(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid)
-    s = STRINGS[lang]
+    
     if not c.args or "|" not in " ".join(c.args): 
-        return await u.message.reply_text(
-            s['get_syntax'], 
-            parse_mode=ParseMode.HTML
-        )
+        return await u.message.reply_text(get_text('get_syntax', lang), parse_mode=ParseMode.HTML)
+    
     full_text = " ".join(c.args)
     parts = [p.strip() for p in full_text.split("|")]
     raw_username = parts[0]
     safe_user = "".join(x for x in raw_username if x.isalnum())
-    if not safe_user:
-        return await u.message.reply_text(s['error_invalid_user'])
+    
+    if not safe_user: 
+        return await u.message.reply_text(get_text('error_invalid_user', lang))
+    
     try:
         raw_date = parts[1].replace("/", "-").replace(".", "-")
         date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
         date_str = date_obj.strftime("%Y-%m-%d")
-    except (ValueError, IndexError):
-        return await u.message.reply_text(
-            s['error_invalid_date'], 
-            parse_mode=ParseMode.HTML
-        )
-    status = await u.message.reply_text(s['status_init_module'], parse_mode=ParseMode.HTML)
+    except: 
+        return await u.message.reply_text(get_text('error_invalid_date', lang), parse_mode=ParseMode.HTML)
+
+    status = await u.message.reply_text(get_text('status_init_module', lang), parse_mode=ParseMode.HTML)
     try:
         repo = Github(GH_TOKEN).get_repo(REPO_NAME)
         js_p, mod_p = f"{safe_user}/LocketGold.js", f"{safe_user}/LocketGold.sgmodule"
         js_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{js_p}"
+        
         js_c = JS_TEMPLATE.format(user=safe_user, date=date_str)
         mod_c = MODULE_TEMPLATE.format(user=raw_username, js_url=js_url)
+
         for p, cnt in [(js_p, js_c), (mod_p, mod_c)]:
             try:
                 f = repo.get_contents(p)
                 repo.update_file(p, f"Update module: {safe_user}", cnt, f.sha)
             except:
                 repo.create_file(p, f"Create module: {safe_user}", cnt)
+        
         await status.edit_text(
-            s['get_success'].format(
-                user=raw_username,
-                date=date_str,
-                repo=REPO_NAME,
-                path=mod_p
-            ), 
+            get_text('get_success', lang, user=raw_username, date=date_str, repo=REPO_NAME, path=mod_p),
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
-        logging.error(f"GitHub Error: {str(e)}")
-        err_msg = s['error_github'].format(error=str(e))
-        await status.edit_text(err_msg, parse_mode=ParseMode.HTML)
+        await status.edit_text(get_text('error_github', lang, error=str(e)), parse_mode=ParseMode.HTML)
 async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await db_auto_reg(u, c)
@@ -976,44 +986,36 @@ async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(f"❌ <b>Lỗi khôi phục:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
-    status_msg = await u.message.reply_text("⏳ <b>Đang trích xuất dữ liệu ra file Excel...</b>", parse_mode=ParseMode.HTML)
+    status_msg = await u.message.reply_text("⏳ <b>Đang trích xuất dữ liệu...</b>", parse_mode=ParseMode.HTML)
+    
     try:
         with sqlite3.connect(DB_PATH) as conn:
             df_u = pd.read_sql_query("SELECT * FROM users", conn)
             df_m = pd.read_sql_query("SELECT * FROM modules", conn)
+            # Gom nhóm ngôn ngữ thành cột Vi và En để dễ sửa
             df_t = pd.read_sql_query("""
-                SELECT 
-                    string_key AS key, 
-                    MAX(CASE WHEN lang = 'vi' THEN content END) AS vi,
-                    MAX(CASE WHEN lang = 'en' THEN content END) AS en
-                FROM translations 
-                GROUP BY string_key
+                SELECT string_key AS key, 
+                MAX(CASE WHEN lang = 'vi' THEN content END) AS vi,
+                MAX(CASE WHEN lang = 'en' THEN content END) AS en
+                FROM translations GROUP BY string_key
             """, conn)
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_u.to_excel(writer, sheet_name='Thành Viên', index=False)
             df_m.to_excel(writer, sheet_name='Danh Sách Modules', index=False)
             df_t.to_excel(writer, sheet_name='Translations', index=False)
         output.seek(0)
-        timestamp = datetime.now(VN_TZ).strftime("%d-%m-%Y_%H%M")
-        caption = (
-            f"📂 <b>SAO LƯU HOÀN TẤT</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Người dùng: <code>{len(df_u)}</code>\n"
-            f"📦 Modules: <code>{len(df_m)}</code>\n"
-            f"📖 Strings: <code>{len(df_t)}</code>\n"
-            f"⏰ Thời gian: <code>{timestamp}</code>"
-        )
+        
         await u.message.reply_document(
             document=output, 
-            filename=f"NDTT_Backup_{timestamp}.xlsx", 
-            caption=caption,
+            filename=f"Backup_{datetime.now().strftime('%d-%m-%Y')}.xlsx", 
+            caption="📂 <b>Dữ liệu hệ thống đã được sao lưu!</b>",
             parse_mode=ParseMode.HTML
         )
         await status_msg.delete()
-    except Exception as e: 
-        logging.error(f"Backup Error: {e}")
-        await status_msg.edit_text(f"❌ <b>Lỗi sao lưu:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Lỗi sao lưu: {e}")
 async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: 
         return
@@ -1251,54 +1253,29 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
+    
     cmd = u.message.text.split()[0][1:].split('@')[0].lower()
-    sys_cmds = [
-        'start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 
-        'stats', 'sendmail', 'donedns', 'saoluu', 'approve', 'send', 
-        'revoke', 'broadcast', 'setlink', 'delmodule', 'addadmin', 'hdsd', 'clear', 'restore'
-    ]
-    if cmd in sys_cmds:
-        return
+    sys_cmds = ['start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 'stats', 'hdsd']
+    
+    if cmd in sys_cmds: return
+
     uid = u.effective_user.id
     lang = get_lang(uid)
-    s = STRINGS[lang]
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-            res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
-        if res:
-            title_raw, url = res['title'], res['url']
-            titles = title_raw.split("/")
-            display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
-            if lang == 'vi':
-                txt = (
-                    f"<b>{display_title}</b>\n\n"
-                    f"🔗 <b>Link Module (Chạm để copy):</b>\n"
-                    f"<code>{url}</code>\n\n"
-                    f"<i>Sau khi copy, hãy dán vào Shadowrocket để cài đặt.</i>"
-                )
-            else:
-                txt = (
-                    f"<b>{display_title}</b>\n\n"
-                    f"🔗 <b>Module Link (Tap to copy):</b>\n"
-                    f"<code>{url}</code>\n\n"
-                    f"<i>After copying, paste it into Shadowrocket to install.</i>"
-                )
-            btn_list_text = s.get('btn_show_list', "📂 View List")
-            kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
-            await u.message.reply_text(
-                text=txt, 
-                parse_mode=ParseMode.HTML, 
-                reply_markup=InlineKeyboardMarkup(kb), 
-                disable_web_page_preview=True
-            )
-        elif u.effective_chat.type == "private":
-            not_found_txt = s.get('mod_not_found', "❌ Module not found: {cmd}").format(cmd=cmd)
-            btn_list_text = s.get('btn_show_list', "📂 List")
-            kb = [[InlineKeyboardButton(btn_list_text, callback_data="show_list")]]
-            await u.message.reply_text(text=not_found_txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
-    except Exception as e:
-        logging.error(f"Error in dynamic_module_handler: {e}")
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
+        
+    if res:
+        titles = res['title'].split("/")
+        display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
+        
+        txt = f"<b>{display_title}</b>\n\n"
+        txt += f"🔗 <b>{('Module Link (Tap to copy)' if lang == 'en' else 'Link Module (Chạm để copy)')}:</b>\n"
+        txt += f"<code>{res['url']}</code>"
+        
+        kb = [[InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]]
+        await u.message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb), disable_web_page_preview=True)
         
 # --- WEB SERVER & API ---
 server = Flask(__name__)
