@@ -387,21 +387,26 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid) 
-    s = STRINGS[lang]    
+    s = STRINGS.get(lang, STRINGS.get('vi', {}))
+    syntax_msg = s.get('feedback_syntax', "⚠️ Cú pháp: /send [nội dung]")
+    done_msg = s.get('feedback_done', "✅ Gửi góp ý thành công!")
+    err_label = "❌ Error:" if lang == 'en' else "❌ Lỗi:"
     if not c.args:
-        return await u.message.reply_text(s['feedback_syntax'], parse_mode=ParseMode.HTML)
+        return await u.message.reply_text(syntax_msg, parse_mode=ParseMode.HTML)
     user = u.effective_user
     text = " ".join(c.args)
-    report = (f"🆘 <b>YÊU CẦU HỖ TRỢ</b>\n"
-              f"━━━━━━━━━━━━━━━━━━\n"
-              f"👤 Người gửi: {user.full_name} (<code>{user.id}</code>)\n"
-              f"📝 Nội dung: {text}")
+    report = (
+        f"🆘 <b>YÊU CẦU HỖ TRỢ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>Người gửi:</b> {user.full_name}\n"
+        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
+        f"📝 <b>Nội dung:</b> {text}"
+    )
     try:
         await c.bot.send_message(ROOT_ADMIN_ID, report, parse_mode=ParseMode.HTML)
-        await u.message.reply_text(s['feedback_done'], parse_mode=ParseMode.HTML)
+        await u.message.reply_text(done_msg, parse_mode=ParseMode.HTML)
     except Exception as e:
-        err_msg = f"❌ Error: {str(e)}" if lang == 'en' else f"❌ Lỗi: {str(e)}"
-        await u.message.reply_text(err_msg)
+        await u.message.reply_text(f"{err_label} {str(e)}")
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
     lang = get_lang(uid)
