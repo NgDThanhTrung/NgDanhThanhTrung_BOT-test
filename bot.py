@@ -38,53 +38,26 @@ def init_db():
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
         
-        # Bổ sung: Bảng lưu trữ chuỗi dịch thuật
+        # Bảng dịch thuật: Lưu mọi nút bấm, lời chào
         cursor.execute('''CREATE TABLE IF NOT EXISTS translations (
-            string_key TEXT,
-            lang TEXT,
-            content TEXT,
-            PRIMARY KEY (string_key, lang)
-        )''')
+            string_key TEXT, lang TEXT, content TEXT, PRIMARY KEY (string_key, lang))''')
 
+        # Bảng thành viên: Lưu is_premium (0.0/1.0) và tương tác
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            full_name TEXT,
-            username TEXT,
-            join_date TEXT,
-            last_active TEXT,
-            interact_count INTEGER DEFAULT 0,
-            is_premium INTEGER DEFAULT 0,
-            language TEXT DEFAULT 'none'
-        )''')
+            user_id TEXT PRIMARY KEY, full_name TEXT, username TEXT, 
+            join_date TEXT, last_active TEXT, interact_count REAL, 
+            is_premium REAL, language TEXT)''')
         
+        # Bảng Modules: Lưu key, tiêu đề, link
         cursor.execute('''CREATE TABLE IF NOT EXISTS modules (
-            key TEXT PRIMARY KEY,
-            title TEXT,
-            url TEXT
-        )''')
+            key TEXT PRIMARY KEY, title TEXT, url TEXT)''')
         
         cursor.execute('''CREATE TABLE IF NOT EXISTS admins (
-            user_id TEXT PRIMARY KEY,
-            added_at TEXT
-        )''')
-        
+            user_id TEXT PRIMARY KEY, added_at TEXT)''')
         conn.commit()
-
-        # TỰ ĐỘNG NẠP DỮ LIỆU TỪ STRINGS VÀO DATABASE NẾU TRỐNG
-        cursor.execute("SELECT COUNT(*) FROM translations")
-        if cursor.fetchone()[0] == 0:
-            logging.info("🚚 Đang nạp dữ liệu dịch thuật vào Database...")
-            for lang, keys in STRINGS.items():
-                for key, content in keys.items():
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO translations (string_key, lang, content) VALUES (?, ?, ?)",
-                        (key, lang, content)
-                    )
-            conn.commit()
 init_db()
 # --- HELPERS ---
 def get_text(key: str, lang: str, **kwargs) -> str:
-    """Lấy nội dung văn bản từ database và format biến nếu có."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
@@ -96,13 +69,8 @@ def get_text(key: str, lang: str, **kwargs) -> str:
             if res:
                 text = res['content'].replace('\\n', '\n')
                 return text.format(**kwargs) if kwargs else text
-    except Exception as e:
-        logging.error(f"Lỗi get_text: {e}")
-    
-    # Cơ chế dự phòng an toàn: không dùng STRINGS['vi'] trực tiếp để tránh KeyError
-    lang_dict = STRINGS.get(lang, STRINGS.get('vi', {}))
-    fallback = lang_dict.get(key, f"[{key}]")
-    return fallback.format(**kwargs) if kwargs else fallback
+    except: pass
+    return f"[{key}]"
 def is_admin(user_id: int) -> bool:
     uid_str = str(user_id)
     if uid_str == str(ROOT_ADMIN_ID): 
@@ -661,67 +629,59 @@ async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     doc = u.message.document
+    
+    # Chỉ nhận diện file Excel có tên chứa Backup
     if not doc or not doc.file_name.endswith(".xlsx"):
-        return await u.message.reply_text("⚠️ Vui lòng gửi file <code>.xlsx</code> để khôi phục.")
-    status_msg = await u.message.reply_text("⏳ <b>Đang phân tích & đồng bộ dữ liệu...</b>", parse_mode=ParseMode.HTML)
+        return await u.message.reply_text("⚠️ Vui lòng gửi file <code>.xlsx</code>.")
+
+    status_msg = await u.message.reply_text(f"🔎 <b>Đang phân tích file:</b> <code>{doc.file_name}</code>...", parse_mode=ParseMode.HTML)
+    
     try:
         file = await c.bot.get_file(doc.file_id)
         file_bytes = await file.download_as_bytearray()
         excel_file = io.BytesIO(file_bytes)
-        trans_log = ""
-        try:
-            df_t = pd.read_excel(excel_file, sheet_name='Translations')
-            with sqlite3.connect(DB_PATH) as conn:
+        xls = pd.ExcelFile(excel_file)
+        
+        with sqlite3.connect(DB_PATH) as conn:
+            # 1. XỬ LÝ SHEET TRANSLATIONS (Giao diện)
+            if 'Translations' in xls.sheet_names:
+                df_t = pd.read_excel(excel_file, sheet_name='Translations')
                 conn.execute("DELETE FROM translations")
                 for _, row in df_t.iterrows():
                     key = str(row['key'])
                     if 'vi' in df_t.columns:
-                        conn.execute("INSERT INTO translations (string_key, lang, content) VALUES (?, ?, ?)", 
-                                     (key, 'vi', str(row['vi'])))
+                        conn.execute("INSERT INTO translations VALUES (?, ?, ?)", (key, 'vi', str(row['vi'])))
                     if 'en' in df_t.columns:
-                        conn.execute("INSERT INTO translations (string_key, lang, content) VALUES (?, ?, ?)", 
-                                     (key, 'en', str(row['en'])))
-                conn.commit()
-            trans_log = f"📖 Dịch thuật: <code>{len(df_t)}</code> chuỗi\n"
-        except Exception as e:
-            logging.warning(f"Sheet Translations not found or error: {e}")
-            trans_log = "⚠️ Dịch thuật: Không tìm thấy sheet hoặc lỗi format\n"
-        df_u = pd.read_excel(excel_file, sheet_name='Thành Viên')
-        df_m = pd.read_excel(excel_file, sheet_name='Danh Sách Modules')
-        with sqlite3.connect(DB_PATH) as conn:
-            for _, row in df_u.iterrows():
-                conn.execute('''
-                    INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count, is_premium, language)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET 
-                        full_name=excluded.full_name,
-                        username=excluded.username,
-                        last_active=excluded.last_active,
-                        interact_count=max(users.interact_count, excluded.interact_count),
-                        is_premium=max(users.is_premium, excluded.is_premium),
-                        language=excluded.language
-                ''', (str(row['user_id']), row['full_name'], row['username'], row['join_date'], 
-                      row['last_active'], row['interact_count'], row['is_premium'], row.get('language', 'vi')))
-            for _, row in df_m.iterrows():
-                conn.execute('''
-                    INSERT INTO modules (key, title, url)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(key) DO UPDATE SET 
-                        title=excluded.title, 
-                        url=excluded.url
-                ''', (row['key'], row['title'], row['url']))
-            conn.commit()   
+                        conn.execute("INSERT INTO translations VALUES (?, ?, ?)", (key, 'en', str(row['en'])))
+
+            # 2. XỬ LÝ SHEET THÀNH VIÊN
+            if 'Thành Viên' in xls.sheet_names:
+                df_u = pd.read_excel(excel_file, sheet_name='Thành Viên')
+                for _, row in df_u.iterrows():
+                    conn.execute('''
+                        INSERT OR REPLACE INTO users (user_id, full_name, username, join_date, last_active, interact_count, is_premium, language)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (str(row['user_id']), row['full_name'], row['username'], row['join_date'], 
+                          row['last_active'], row['interact_count'], row['is_premium'], row['language']))
+
+            # 3. XỬ LÝ SHEET DANH SÁCH MODULES
+            if 'Danh Sách Modules' in xls.sheet_names:
+                df_m = pd.read_excel(excel_file, sheet_name='Danh Sách Modules')
+                conn.execute("DELETE FROM modules")
+                for _, row in df_m.iterrows():
+                    conn.execute("INSERT INTO modules VALUES (?, ?, ?)", (str(row['key']).lower(), row['title'], row['url']))
+            
+            conn.commit()
+
         await status_msg.edit_text(
-            f"✅ <b>KHÔI PHỤC THÀNH CÔNG!</b>\n"
+            f"✅ <b>ĐỒNG BỘ HOÀN TẤT!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"{trans_log}"
-            f"👤 Thành viên: <code>{len(df_u)}</code> Users\n"
-            f"📦 Modules: <code>{len(df_m)}</code> mục",
+            f"📂 File: <code>{doc.file_name}</code>\n"
+            f"📖 Đã cập nhật toàn bộ Giao diện, User và Modules.",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
-        logging.error(f"Restore Error: {e}")
-        await status_msg.edit_text(f"❌ <b>Lỗi khôi phục:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+        await status_msg.edit_text(f"❌ <b>Lỗi nhận diện cấu trúc:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     status_msg = await u.message.reply_text("⏳ <b>Đang trích xuất dữ liệu...</b>", parse_mode=ParseMode.HTML)
