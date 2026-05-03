@@ -307,6 +307,15 @@ def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
         cursor = conn.cursor()
+        
+        # BỔ SUNG: Tạo bảng lưu trữ chuỗi dịch thuật
+        cursor.execute('''CREATE TABLE IF NOT EXISTS translations (
+            string_key TEXT,
+            lang TEXT,
+            content TEXT,
+            PRIMARY KEY (string_key, lang)
+        )''')
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
             user_id TEXT PRIMARY KEY,
             full_name TEXT,
@@ -333,6 +342,17 @@ def init_db():
         conn.commit()
 init_db()
 # --- HELPERS ---
+def get_text(key: str, lang: str) -> str:
+    """Lấy nội dung văn bản từ database thay vì biến STRINGS cứng"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            res = conn.execute("SELECT content FROM translations WHERE string_key = ? AND lang = ?", (key, lang)).fetchone()
+            if res:
+                return res['content'].replace('\\n', '\n') # Hỗ trợ xuống dòng
+    except:
+        pass
+    return f"[{key}]" 
 def is_admin(user_id: int) -> bool:
     uid_str = str(user_id)
     if uid_str == str(ROOT_ADMIN_ID): 
@@ -895,18 +915,37 @@ async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
     doc = u.message.document
     if not doc or not doc.file_name.endswith(".xlsx"):
         return await u.message.reply_text("⚠️ Vui lòng gửi file <code>.xlsx</code> để khôi phục.")
-    status_msg = await u.message.reply_text("⏳ <b>Đang phân tích & khôi phục dữ liệu...</b>", parse_mode=ParseMode.HTML)
+    status_msg = await u.message.reply_text("⏳ <b>Đang phân tích & đồng bộ dữ liệu...</b>", parse_mode=ParseMode.HTML)
     try:
         file = await c.bot.get_file(doc.file_id)
         file_bytes = await file.download_as_bytearray()
-        df_u = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Thành Viên')
-        df_m = pd.read_excel(io.BytesIO(file_bytes), sheet_name='Danh Sách Modules')
+        excel_file = io.BytesIO(file_bytes)
+        trans_log = ""
+        try:
+            df_t = pd.read_excel(excel_file, sheet_name='Translations')
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("DELETE FROM translations")
+                for _, row in df_t.iterrows():
+                    key = str(row['key'])
+                    if 'vi' in df_t.columns:
+                        conn.execute("INSERT INTO translations (string_key, lang, content) VALUES (?, ?, ?)", 
+                                     (key, 'vi', str(row['vi'])))
+                    if 'en' in df_t.columns:
+                        conn.execute("INSERT INTO translations (string_key, lang, content) VALUES (?, ?, ?)", 
+                                     (key, 'en', str(row['en'])))
+                conn.commit()
+            trans_log = f"📖 Dịch thuật: <code>{len(df_t)}</code> chuỗi\n"
+        except Exception as e:
+            logging.warning(f"Sheet Translations not found or error: {e}")
+            trans_log = "⚠️ Dịch thuật: Không tìm thấy sheet hoặc lỗi format\n"
+        df_u = pd.read_excel(excel_file, sheet_name='Thành Viên')
+        df_m = pd.read_excel(excel_file, sheet_name='Danh Sách Modules')
         with sqlite3.connect(DB_PATH) as conn:
             for _, row in df_u.iterrows():
                 conn.execute('''
                     INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count, is_premium, language)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET
+                    ON CONFLICT(user_id) DO UPDATE SET 
                         full_name=excluded.full_name,
                         username=excluded.username,
                         last_active=excluded.last_active,
@@ -927,8 +966,9 @@ async def restore_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             f"✅ <b>KHÔI PHỤC THÀNH CÔNG!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Đã xử lý: <code>{len(df_u)}</code> Users\n"
-            f"📦 Đã xử lý: <code>{len(df_m)}</code> Modules",
+            f"{trans_log}"
+            f"👤 Thành viên: <code>{len(df_u)}</code> Users\n"
+            f"📦 Modules: <code>{len(df_m)}</code> mục",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
@@ -941,10 +981,19 @@ async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
         with sqlite3.connect(DB_PATH) as conn:
             df_u = pd.read_sql_query("SELECT * FROM users", conn)
             df_m = pd.read_sql_query("SELECT * FROM modules", conn)
+            df_t = pd.read_sql_query("""
+                SELECT 
+                    string_key AS key, 
+                    MAX(CASE WHEN lang = 'vi' THEN content END) AS vi,
+                    MAX(CASE WHEN lang = 'en' THEN content END) AS en
+                FROM translations 
+                GROUP BY string_key
+            """, conn)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_u.to_excel(writer, sheet_name='Thành Viên', index=False)
             df_m.to_excel(writer, sheet_name='Danh Sách Modules', index=False)
+            df_t.to_excel(writer, sheet_name='Translations', index=False)
         output.seek(0)
         timestamp = datetime.now(VN_TZ).strftime("%d-%m-%Y_%H%M")
         caption = (
@@ -952,6 +1001,7 @@ async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
             f"━━━━━━━━━━━━━━━━━━\n"
             f"👤 Người dùng: <code>{len(df_u)}</code>\n"
             f"📦 Modules: <code>{len(df_m)}</code>\n"
+            f"📖 Strings: <code>{len(df_t)}</code>\n"
             f"⏰ Thời gian: <code>{timestamp}</code>"
         )
         await u.message.reply_document(
@@ -962,6 +1012,7 @@ async def backup_data(u: Update, c: ContextTypes.DEFAULT_TYPE):
         )
         await status_msg.delete()
     except Exception as e: 
+        logging.error(f"Backup Error: {e}")
         await status_msg.edit_text(f"❌ <b>Lỗi sao lưu:</b> <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id) or not c.args: 
