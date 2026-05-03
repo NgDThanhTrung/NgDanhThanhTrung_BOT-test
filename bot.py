@@ -545,6 +545,7 @@ async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
     if not is_admin(user_id):
         return 
+    
     lang = get_lang(user_id)
     txt = (
         "🛠 <b>BẢNG ĐIỀU KHIỂN QUẢN TRỊ VIÊN</b>\n"
@@ -568,11 +569,14 @@ async def admin_panel(u: Update, c: ContextTypes.DEFAULT_TYPE):
         
         "💡 <i>Mẹo: Chạm vào các ID hoặc mã lệnh để sao chép nhanh.</i>"
     )
+
     btn_back_label = get_text('btn_back', lang)
-    if btn_back_label == "[btn_back]": btn_back_label = "⬅️ Quay lại Menu"
+    if btn_back_label == "[btn_back]": 
+        btn_back_label = "⬅️ Quay lại Menu"
+
     kb = [
         [
-            InlineKeyboardButton("📊 Stats", callback_data="admin_stats_quick"), # Thêm nếu bạn muốn xử lý callback
+            InlineKeyboardButton("📊 Stats", callback_data="admin_stats_quick"),
             InlineKeyboardButton("📂 User List", callback_data="show_list")
         ],
         [InlineKeyboardButton(btn_back_label, callback_data="back_start")]
@@ -910,8 +914,6 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     data = query.data
     await query.answer()
     uid = str(query.from_user.id)
-
-    # 1. Xử lý đổi ngôn ngữ
     if data.startswith("set_lang_") or data.startswith("setlang_"):
         new_lang = data.split("_")[-1]
         with sqlite3.connect(DB_PATH) as conn:
@@ -921,8 +923,6 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await query.delete_message()
         except: pass
         return await start(u, c)
-
-    # 2. Giao diện chính
     if data == "show_list":
         await send_module_list(u, c)
     elif data.startswith("list_page_"):
@@ -938,8 +938,10 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
     elif data == "admin_panel":
         await admin_panel(u, c)
-        
-    # 3. Xử lý yêu cầu DNS (dành cho Admin)
+    elif data == "admin_stats_quick":
+        if is_admin(uid):
+            await stats(u, c)
+        return
     elif data.startswith("done_req_"):
         if not is_admin(uid): return
         target_uid = data.split("_")[-1]
