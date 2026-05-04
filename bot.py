@@ -86,10 +86,11 @@ def get_lang(user_id: str) -> str:
     try:
         with sqlite3.connect(DB_PATH) as conn:
             res = conn.execute("SELECT language FROM users WHERE user_id = ?", (str(user_id),)).fetchone()
-            if res and res[0] and res[0] != 'none':
+            if res and res[0] and str(res[0]).strip().lower() != 'none':
                 return res[0]
-    except: pass
-    return 'vi'
+    except Exception: 
+        pass
+    return 'none'
 async def check_premium_permission(u: Update):
     uid = u.effective_user.id
     lang = get_lang(uid) 
@@ -121,8 +122,9 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
     uname = (f"@{user.username}" if user.username else "N/A")
     fname = user.full_name
     now = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    is_command = bool(u.message and u.message.text and u.message.text.startswith('/'))
-    interact_inc = 1 if is_command else 0
+    is_interact = bool(u.message and (u.message.text or u.message.caption))
+    interact_inc = 1 if is_interact else 0
+    
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute('''
             INSERT INTO users (user_id, full_name, username, join_date, last_active, interact_count, language) 
@@ -132,6 +134,8 @@ async def db_auto_reg(u: Update, c: ContextTypes.DEFAULT_TYPE = None):
                 username = excluded.username,
                 last_active = excluded.last_active, 
                 interact_count = interact_count + ?
+            -- LƯU Ý: Không thêm "language = excluded.language" ở đây 
+            -- để tránh ghi đè ngôn ngữ đã chọn thành 'none'
         ''', (uid, fname, uname, now, now, interact_inc, 'none', interact_inc))
         conn.commit()
 async def send_ui(u: Update, text: str, kb: list):
@@ -269,8 +273,13 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
             InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
         ]]
-        return await send_ui(u, get_text('lang_select', 'vi'), kb)
+        msg = get_text('lang_select', 'vi')
+        if msg == "[lang_select]": 
+            msg = "<b>Vui lòng chọn ngôn ngữ / Please select language:</b>"
+        return await send_ui(u, msg, kb)
     txt = get_text('welcome', lang, name=user.first_name, url=KOYEB_URL)
+    if txt == "[welcome]":
+        txt = f"🌟 Chào mừng {user.first_name} quay trở lại!" if lang == 'vi' else f"🌟 Welcome back {user.first_name}!"
     kb = [
         [InlineKeyboardButton(get_text('btn_list', lang), callback_data="show_list")],
         [
