@@ -629,7 +629,8 @@ async def revoke_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await u.message.reply_text(f"🚫 Đã thu hồi ID: <code>{target_uid}</code> (Không thể gửi thông báo cho user).")    
 async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(u.effective_user.id): return
+    if not is_admin(u.effective_user.id): 
+        return
     with sqlite3.connect(DB_PATH) as conn:
         u_c = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         p_c = conn.execute("SELECT COUNT(*) FROM users WHERE is_premium = 1").fetchone()[0]
@@ -651,7 +652,8 @@ async def stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
         f"• English 🇺🇸: <code>{en_c}</code>\n"
         f"• Chưa chọn: <code>{none_c}</code>"
     )
-    await u.message.reply_text(txt, parse_mode=ParseMode.HTML)
+    kb = [[InlineKeyboardButton("⬅️ Quay lại", callback_data="admin_panel")]]
+    await send_ui(u, txt, kb)
 async def clear_members(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.effective_user.id != ROOT_ADMIN_ID:
         return
