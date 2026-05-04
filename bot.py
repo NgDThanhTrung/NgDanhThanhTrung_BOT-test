@@ -65,7 +65,6 @@ def get_text(key: str, lang: str, **kwargs) -> str:
                 "SELECT content FROM translations WHERE string_key = ? AND lang = ?", 
                 (key, lang)
             ).fetchone()
-            
             if res:
                 text = res['content'].replace('\\n', '\n')
                 return text.format(**kwargs) if kwargs else text
@@ -79,39 +78,30 @@ def is_admin(user_id: int) -> bool:
         res = conn.execute("SELECT 1 FROM admins WHERE user_id = ?", (uid_str,)).fetchone()
         return res is not None        
 async def is_premium(user_id: int) -> bool:
-    """Kiểm tra xem người dùng có phải Premium không (Logic ngầm)"""
     uid_str = str(user_id)
     with sqlite3.connect(DB_PATH) as conn:
         res = conn.execute("SELECT is_premium FROM users WHERE user_id = ?", (uid_str,)).fetchone()
         return res is not None and res[0] == 1
 def get_lang(user_id: str) -> str:
-    """
-    Lấy ngôn ngữ của người dùng từ DB.
-    Trả về 'en' hoặc 'vi'. Mặc định là 'vi' nếu chưa chọn hoặc không tìm thấy user.
-    """
     try:
         with sqlite3.connect(DB_PATH) as conn:
             res = conn.execute("SELECT language FROM users WHERE user_id = ?", (str(user_id),)).fetchone()
             if res and res[0] and res[0] != 'none':
                 return res[0]
-    except Exception as e:
-        print(f"Error getting language: {e}")
+    except: pass
     return 'vi'
 async def check_premium_permission(u: Update):
-    """
-    Kiểm tra quyền Premium và thông báo bằng ngôn ngữ phù hợp nếu người dùng bị từ chối truy cập.
-    """
     uid = u.effective_user.id
     lang = get_lang(uid) 
-    s = STRINGS[lang] 
     if await is_premium(uid) or is_admin(uid):
         return True
+    txt = get_text('premium_alert', lang)
     kb = [
-        [InlineKeyboardButton(s['btn_donate_up'], callback_data="donate_info")],
-        [InlineKeyboardButton(s['btn_contact'], url=CONTACT_URL)]
+        [InlineKeyboardButton(get_text('btn_donate_up', lang), callback_data="donate_info")],
+        [InlineKeyboardButton(get_text('btn_contact', lang), url=CONTACT_URL)]
     ]
-    await send_ui(u, s['premium_alert'], kb)
-    return False  
+    await send_ui(u, txt, kb)
+    return False
 async def add_admin_db(user_id: str):
     """
     Thêm admin mới vào database (Dữ liệu nội bộ)
@@ -299,9 +289,8 @@ async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user = u.effective_user
     uid = user.id
     lang = get_lang(uid)
-    s = STRINGS[lang]
     if not c.args:
-        return await u.message.reply_text(s['sendmail_syntax'], parse_mode=ParseMode.HTML)
+        return await u.message.reply_text(get_text('sendmail_syntax', lang), parse_mode=ParseMode.HTML)
     user_msg = " ".join(c.args)
     kb_admin = [[InlineKeyboardButton("✅ XÁC NHẬN XỬ LÝ", callback_data=f"done_req_{uid}")]]
     report_to_admin = (
@@ -318,10 +307,9 @@ async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML, 
             reply_markup=InlineKeyboardMarkup(kb_admin)
         )
-        await u.message.reply_text(s['sendmail_done'], parse_mode=ParseMode.HTML)
+        await u.message.reply_text(get_text('sendmail_done', lang), parse_mode=ParseMode.HTML)
     except Exception as e:
-        err_msg = f"❌ Error: {str(e)}" if lang == 'en' else f"❌ Lỗi gửi tin nhắn: {str(e)}"
-        await u.message.reply_text(err_msg)        
+        await u.message.reply_text(f"❌ Error: {str(e)}")
 async def done_dns_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): return
     if not c.args or "|" not in " ".join(c.args):
@@ -402,12 +390,8 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
     lang = get_lang(uid) 
-    s = STRINGS.get(lang, STRINGS.get('vi', {}))
-    syntax_msg = s.get('feedback_syntax', "⚠️ Cú pháp: /send [nội dung]")
-    done_msg = s.get('feedback_done', "✅ Gửi góp ý thành công!")
-    err_label = "❌ Error:" if lang == 'en' else "❌ Lỗi:"
     if not c.args:
-        return await u.message.reply_text(syntax_msg, parse_mode=ParseMode.HTML)
+        return await u.message.reply_text(get_text('feedback_syntax', lang), parse_mode=ParseMode.HTML)
     user = u.effective_user
     text = " ".join(c.args)
     report = (
@@ -419,9 +403,10 @@ async def send_feedback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     try:
         await c.bot.send_message(ROOT_ADMIN_ID, report, parse_mode=ParseMode.HTML)
-        await u.message.reply_text(done_msg, parse_mode=ParseMode.HTML)
+        await u.message.reply_text(get_text('feedback_done', lang), parse_mode=ParseMode.HTML)
     except Exception as e:
-        await u.message.reply_text(f"{err_label} {str(e)}")
+        error_label = "❌ Error:" if lang == 'en' else "❌ Lỗi:"
+        await u.message.reply_text(f"{error_label} {str(e)}")
 async def profile(u: Update, c: ContextTypes.DEFAULT_TYPE):
     uid = str(u.effective_user.id)
     lang = get_lang(uid)
