@@ -270,16 +270,17 @@ NEXTDNS_CONFIG = """<?xml version="1.0" encoding="UTF-8"?>
 
 # --- HANDLERS ---
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    uid = str(u.effective_user.id)
     await db_auto_reg(u, c)
-    lang = get_lang(uid)
+    user = u.effective_user
+    uid = str(user.id)
+    lang = get_lang(uid) 
     if lang == 'none' or not lang:
         kb = [[
             InlineKeyboardButton("Tiếng Việt 🇻🇳", callback_data="set_lang_vi"),
             InlineKeyboardButton("English 🇺🇸", callback_data="set_lang_en")
         ]]
         return await send_ui(u, get_text('lang_select', 'vi'), kb)
-    txt = get_text('welcome', lang, name=u.effective_user.first_name, url=KOYEB_URL)
+    txt = get_text('welcome', lang, name=user.first_name, url=KOYEB_URL)
     kb = [
         [InlineKeyboardButton(get_text('btn_list', lang), callback_data="show_list")],
         [
@@ -291,6 +292,8 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(get_text('btn_contact', lang), url=CONTACT_URL)
         ]
     ]
+    if is_admin(user.id):
+        kb.append([InlineKeyboardButton("🛠 Admin Panel", callback_data="admin_panel")])
     await send_ui(u, txt, kb)
 async def send_mail_to_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user = u.effective_user
@@ -348,17 +351,21 @@ async def done_dns_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(f"❌ Lỗi: {str(e)}")
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
-    await query.answer()
     data = query.data
+    await query.answer()
     uid = str(query.from_user.id)
-    if data.startswith("set_lang_"):
+    if data.startswith("set_lang_") or data.startswith("setlang_"):
         new_lang = data.split("_")[-1]
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute("UPDATE users SET language = ? WHERE user_id = ?", (new_lang, uid))
             conn.commit()
+        try:
+            await query.delete_message()
+        except Exception:
+            pass
         return await start(u, c)
     if data == "show_list":
-        await send_module_list(u, c)
+        await send_module_list(u, c, page=1)
     elif data.startswith("list_page_"):
         page_num = int(data.split("_")[-1])
         await send_module_list(u, c, page=page_num)
@@ -366,11 +373,19 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await profile(u, c)
     elif data == "donate_info":
         await donate_info(u, c)
-    elif data == "back_start":
-        await start(u, c)
     elif data == "hdsd":
         await hdsd_ui(u, c)
+    elif data == "back_start":
+        await start(u, c)
+    elif data == "admin_panel":
+        if is_admin(uid):
+            await admin_panel(u, c)
+    elif data == "admin_stats_quick":
+        if is_admin(uid):
+            await stats(u, c)
     elif data.startswith("done_req_"):
+        if not is_admin(uid):
+            return   
         target_uid = data.split("_")[-1]
         admin_txt = (
             f"📩 <b>TIẾN HÀNH TRẢ KẾT QUẢ</b>\n"
