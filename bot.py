@@ -912,17 +912,13 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
     uid = u.effective_user.id
     lang = get_lang(uid)
     is_user_admin = is_admin(uid)
-    per_page = 5 # Số lượng thành viên trên mỗi trang
-    
+    per_page = 5 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        
-        # 1. LẤY DANH SÁCH MODULES (Hiển thị cho tất cả)
         mods = conn.execute("SELECT key, title FROM modules").fetchall()
         header_mod = "📂 <b>MODULE LIST</b>" if lang == 'en' else "📂 <b>DANH SÁCH MODULES</b>"
         txt = f"{header_mod} ({len(mods)})\n"
         txt += "━━━━━━━━━━━━━━━━━━\n"
-        
         if mods:
             mod_lines = []
             for m in mods:
@@ -932,34 +928,35 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
             txt += "\n".join(mod_lines)
         else:
             txt += "📭 " + ("No modules available." if lang == 'en' else "Hiện chưa có module nào.")
-
         kb = []
-        
-        # 2. LẤY DANH SÁCH THÀNH VIÊN (Chỉ hiển thị cho Admin)
         if is_user_admin:
             offset = (page - 1) * per_page
-            # Lấy danh sách user từ DB
             users = conn.execute(
-                "SELECT user_id, full_name, is_premium FROM users LIMIT ? OFFSET ?", 
+                "SELECT user_id, full_name, username, is_premium, last_active FROM users LIMIT ? OFFSET ?", 
                 (per_page, offset)
             ).fetchall()
-            
-            # Đếm tổng số user để tính trang[cite: 7]
             total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             total_pages = (total_users + per_page - 1) // per_page
-
             txt += "\n\n👤 <b>MEMBER LIST</b>\n" if lang == 'en' else "\n\n👤 <b>DANH SÁCH THÀNH VIÊN</b>\n"
             txt += "━━━━━━━━━━━━━━━━━━\n"
-            
             if users:
                 for user in users:
-                    badge = "💎" if user['is_premium'] == 1 else "👤"
-                    txt += f"{badge} <code>{user['user_id']}</code> - {user['full_name']}\n"
-                txt += f"\n📖 {('Page' if lang == 'en' else 'Trang')}: <b>{page}/{total_pages}</b>"
+                    is_target_admin = is_admin(user['user_id'])
+                    if is_target_admin:
+                        status_label = "👑 Admin"
+                    elif user['is_premium'] == 1:
+                        status_label = "💎 Premium"
+                    else:
+                        status_label = "👤 Free"
+                    txt += (
+                        f"<b>{user['full_name']}</b> ({user['username']})\n"
+                        f"├ ID: <code>{user['user_id']}</code>\n"
+                        f"├ Quyền: <code>{status_label}</code>\n"
+                        f"└ Hoạt động: <code>{user['last_active']}</code>\n\n"
+                    )
+                txt += f"📖 {('Page' if lang == 'en' else 'Trang')}: <b>{page}/{total_pages}</b>"
             else:
-                txt += "Empty."
-
-            # Nút điều hướng phân trang cho Admin[cite: 7]
+                txt += "📭 Empty."
             nav_btns = []
             if page > 1:
                 nav_btns.append(InlineKeyboardButton("⬅️ Trước", callback_data=f"list_page_{page-1}"))
@@ -967,12 +964,9 @@ async def send_module_list(u: Update, c: ContextTypes.DEFAULT_TYPE, page: int = 
                 nav_btns.append(InlineKeyboardButton("Sau ➡️", callback_data=f"list_page_{page+1}"))
             if nav_btns:
                 kb.append(nav_btns)
-
-    # 3. NÚT BẤM CHỨC NĂNG CHUNG[cite: 7]
     kb.append([InlineKeyboardButton(get_text('btn_donate', lang), callback_data="donate_info")])
     kb.append([InlineKeyboardButton(get_text('btn_profile', lang), callback_data="profile")])
     kb.append([InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start")])
-    
     await send_ui(u, txt, kb)
 async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
     query = u.callback_query
