@@ -995,7 +995,7 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await admin_panel(u, c)
     elif data == "admin_stats_quick":
         if is_admin(uid):
-            await stats(u, c)[cite: 7]
+            await stats(u, c)
         return
     elif data.startswith("done_req_"):
         if not is_admin(uid): 
