@@ -495,43 +495,62 @@ async def get_nextdns(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await db_auto_reg(u, c)
         uid = u.effective_user.id
         lang = get_lang(uid)
-        s = STRINGS[lang]
+        
+        # Thay thế việc dùng s = STRINGS[lang] bằng cách gọi get_text trực tiếp
         if not c.args:
+            guide_txt = get_text('nextdns_guide', lang)
             return await u.message.reply_text(
-                s['nextdns_guide'], 
+                guide_txt, 
                 parse_mode=ParseMode.HTML, 
                 disable_web_page_preview=True
             )
+
         dns_id = c.args[0].strip()
-        status = await u.message.reply_text(s['status_init_config'], parse_mode=ParseMode.HTML)
+        
+        # Hiển thị trạng thái đang xử lý
+        status_init_txt = get_text('status_init_config', lang)
+        status = await u.message.reply_text(status_init_txt, parse_mode=ParseMode.HTML)
+        
         xml_content = NEXTDNS_CONFIG.format(
             dns_id=dns_id,
             uuid1=str(uuid.uuid4()),
             uuid2=str(uuid.uuid4())
         )
+        
         shortcut_url = "https://www.icloud.com/shortcuts/ef6f685318484784940648ad520b5c4f"
+        
+        # Xây dựng Keyboard bằng cách lấy text từ DB
         kb = [
-            [InlineKeyboardButton(s['btn_nextdns_shourtcut'], url=shortcut_url)],
+            [InlineKeyboardButton(get_text('btn_nextdns_shourtcut', lang), url=shortcut_url)],
             [
-                InlineKeyboardButton(s['btn_back'], callback_data="back_start"), 
-                InlineKeyboardButton(s['btn_contact'], url=CONTACT_URL)
+                InlineKeyboardButton(get_text('btn_back', lang), callback_data="back_start"), 
+                InlineKeyboardButton(get_text('btn_contact', lang), url=CONTACT_URL)
             ]
         ]
+        
         safe_xml = html.escape(xml_content)
-        msg_text = s['nextdns_success'].format(
+        
+        # Lấy template thông báo thành công và format
+        success_tpl = get_text('nextdns_success', lang)
+        msg_text = success_tpl.format(
             dns_id=dns_id,
             xml=safe_xml
         )
+        
         await u.message.reply_text(
             msg_text, 
             parse_mode=ParseMode.HTML, 
             reply_markup=InlineKeyboardMarkup(kb)
         )
         await status.delete()
+        
     except Exception as e:
         logging.error(f"Lỗi NextDNS: {e}")
-        error_prefix = "❌ <b>System Error:</b>" if lang == 'en' else "❌ <b>Lỗi hệ thống:</b>"
+        # Đảm bảo lang luôn tồn tại để không lỗi trong khối except
+        current_lang = get_lang(u.effective_user.id) if u.effective_user else 'vi'
+        error_prefix = "❌ <b>System Error:</b>" if current_lang == 'en' else "❌ <b>Lỗi hệ thống:</b>"
         error_txt = f"{error_prefix} <code>{str(e)}</code>"
+        
         if 'status' in locals():
             await status.edit_text(error_txt, parse_mode=ParseMode.HTML)
         else:
