@@ -794,38 +794,94 @@ async def approve_user(u: Update, c: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
 async def broadcast(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(u.effective_user.id): return
+    admin_id = u.effective_user.id
+    if not is_admin(admin_id): 
+        return
+
+    # Lấy nội dung tin nhắn
     msg = " ".join(c.args)
     if not msg: 
-        return await u.message.reply_text("⚠️ <b>Cú pháp:</b> <code>/broadcast [nội dung]</code>", parse_mode=ParseMode.HTML)
+        return await u.message.reply_text(
+            "⚠️ <b>Cú pháp:</b> <code>/broadcast [Nội dung VI] | [Nội dung EN]</code>", 
+            parse_mode=ParseMode.HTML
+        )
+
+    # Tách ngôn ngữ dựa trên ký tự "|"
     parts = msg.split("|")
     msg_vi = parts[0].strip()
     msg_en = parts[1].strip() if len(parts) > 1 else msg_vi
-    status_msg = await u.message.reply_text("⏳ <b>Đang bắt đầu gửi thông báo...</b>", parse_mode=ParseMode.HTML)
-    with sqlite3.connect(DB_PATH) as conn: 
-        users = conn.execute("SELECT user_id, language FROM users").fetchall()
-    count = 0
-    blocked = 0
-    for user_id, lang in users:
-        try:
-            content = msg_en if lang == 'en' else msg_vi
-            final_msg = (
-                f"📢 <b>SYSTEM NOTIFICATION</b>\n" if lang == 'en' else f"📢 <b>THÔNG BÁO TỪ HỆ THỐNG</b>\n"
-            )
-            final_msg += f"━━━━━━━━━━━━━━━━━━\n\n{content}"
-            await c.bot.send_message(user_id, final_msg, parse_mode=ParseMode.HTML)
-            count += 1
-            await asyncio.sleep(0.05) 
-        except Exception:
-            blocked += 1
-            continue       
-    await status_msg.edit_text(
-        f"✅ <b>GỬI THÔNG BÁO HOÀN TẤT</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 Thành công: <code>{count}</code>\n"
-        f"🚫 Thất bại (Block): <code>{blocked}</code>",
+
+    # Gửi thông báo bắt đầu tiến trình cho Admin
+    status_msg = await u.message.reply_text(
+        "⏳ <b>Đang thực hiện gửi thông báo toàn hệ thống (bao gồm cả Admin)...</b>", 
         parse_mode=ParseMode.HTML
     )
+
+    success_list = []  # Lưu thông tin người nhận thành công
+    blocked_list = []  # Lưu thông tin người chặn bot / lỗi
+
+    # Lấy danh sách user từ Database
+    with sqlite3.connect(DB_PATH) as conn: 
+        conn.row_factory = sqlite3.Row
+        users = conn.execute("SELECT user_id, full_name, username, language FROM users").fetchall()
+
+    for user in users:
+        target_id = int(user['user_id'])
+        lang = user['language']
+        
+        # Định dạng thông tin người dùng để báo cáo
+        username_flat = f"(@{user['username']})" if user['username'] and user['username'] != "N/A" else ""
+        user_info = f"👤 {user['full_name']} {username_flat} | ID: <code>{target_id}</code>"
+
+        # Quyết định nội dung theo ngôn ngữ của từng user
+        content = msg_en if lang == 'en' else msg_vi
+        header = "📢 <b>SYSTEM NOTIFICATION</b>\n" if lang == 'en' else "📢 <b>THÔNG BÁO TỪ HỆ THỐNG</b>\n"
+        final_msg = f"{header}━━━━━━━━━━━━━━━━━━\n\n{content}"
+
+        try:
+            # Thực hiện gửi tin nhắn
+            await c.bot.send_message(chat_id=target_id, text=final_msg, parse_mode=ParseMode.HTML)
+            success_list.append(user_info)
+            await asyncio.sleep(0.05)  # Tránh bị Telegram giới hạn spam (rate limit)
+        except Exception as e:
+            # Ghi nhận người dùng chặn bot hoặc bị lỗi
+            blocked_list.append(f"{user_info}\n└ <i>Lỗi: {str(e)}</i>")
+
+    # Xây dựng nội dung báo cáo gửi về cho Admin
+    report_txt = (
+        f"📢 <b>KẾT QUẢ GỬI THÔNG BÁO TOÀN HỆ THỐNG</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"✅ <b>Thành công:</b> {len(success_list)} người dùng\n"
+        f"❌ <b>Thất bại (Block/Lỗi):</b> {len(blocked_list)} người dùng\n\n"
+    )
+
+    # Chi tiết danh sách thành công
+    if success_list:
+        report_txt += "🟢 <b>DANH SÁCH NHẬN THÀNH CÔNG:</b>\n"
+        report_txt += "\n".join(success_list) + "\n\n"
+    else:
+        report_txt += "🟢 <b>DANH SÁCH NHẬN THÀNH CÔNG:</b> Không có\n\n"
+
+    # Chi tiết danh sách chặn bot
+    if blocked_list:
+        report_txt += "🔴 <b>DANH SÁCH ĐÃ CHẶN BOT:</b>\n"
+        report_txt += "\n".join(blocked_list)
+    else:
+        report_txt += "🔴 <b>DANH SÁCH ĐÃ CHẶN BOT:</b> Không có"
+
+    # Cập nhật hoặc gửi báo cáo (có cơ chế chia nhỏ phòng khi báo cáo quá dài > 4096 ký tự)
+    try:
+        await status_msg.edit_text(report_txt, parse_mode=ParseMode.HTML)
+    except Exception:
+        # Nếu quá dài, báo cáo sẽ được chia nhỏ thành các tin nhắn 4000 ký tự gửi liên tiếp
+        await status_msg.edit_text(
+            "✅ <i>Tiến trình hoàn tất! Báo cáo quá dài nên đã được chia nhỏ và gửi chi tiết ngay dưới đây.</i>", 
+            parse_mode=ParseMode.HTML
+        )
+        chunks = [report_txt[i:i+4000] for i in range(0, len(report_txt), 4000)]
+        for chunk in chunks:
+            await c.bot.send_message(chat_id=admin_id, text=chunk, parse_mode=ParseMode.HTML)
+
 async def set_link(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not is_admin(u.effective_user.id): 
         return
