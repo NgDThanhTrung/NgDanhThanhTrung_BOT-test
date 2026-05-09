@@ -1086,15 +1086,75 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
         
     if res:
+        module_url = res['url']
         titles = res['title'].split("/")
         display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
+
+        # --- TRƯỜNG HỢP 1: NẾU LINK CÓ CHỨA TỪ "BOT" ---
+        if "bot" in module_url.lower():
+            if lang == 'en':
+                txt = (
+                    f"🤖 <b>OFFICIAL PARTNER BOT</b>\n"
+                    f"────────────────────────\n"
+                    f"🌟 <b>Service:</b> {display_title}\n"
+                    f"📝 <b>Description:</b> This is a specialized automated system developed by our team.\n\n"
+                    f"💡 <i>Click the button below to start experiencing the new features!</i>"
+                )
+                btn_main = "🚀 Launch Bot Now"
+            else:
+                txt = (
+                    f"🤖 <b>HỆ THỐNG BOT ĐỐI TÁC</b>\n"
+                    f"────────────────────────\n"
+                    f"🌟 <b>Dịch vụ:</b> {display_title}\n"
+                    f"📝 <b>Mô tả:</b> Đây là hệ thống tự động hóa chuyên biệt được phát triển bởi đội ngũ của chúng tôi.\n\n"
+                    f"💡 <i>Nhấn vào nút bên dưới để bắt đầu trải nghiệm các tính năng mới ngay nhé!</i>"
+                )
+                btn_main = "🚀 Truy cập Bot ngay"
+
+            keyboard = [
+                [InlineKeyboardButton(text=btn_main, url=module_url)],
+                [InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]
+            ]
+
+        # --- TRƯỜNG HỢP 2: LINK BÌNH THƯỜNG (MODULE) ---
+        else:
+            if lang == 'en':
+                txt = (
+                    f"✨ <b>{display_title} CONFIGURATION</b>\n"
+                    f"────────────────────────\n"
+                    f"🚀 <b>Status:</b> <code>Active</code>\n"
+                    f"📂 <b>Category:</b> Premium Module\n\n"
+                    f"🔗 <b>Direct Link:</b>\n<code>{module_url}</code>\n"
+                    f"────────────────────────"
+                )
+                btn_open = "🌐 Open Link"
+                btn_copy = "📋 Copy Link"
+            else:
+                txt = (
+                    f"✨ <b>CẤU HÌNH {display_title}</b>\n"
+                    f"────────────────────────\n"
+                    f"🚀 <b>Trạng thái:</b> <code>Sẵn sàng</code>\n"
+                    f"📂 <b>Loại:</b> Premium Module\n\n"
+                    f"🔗 <b>Liên kết trực tiếp:</b>\n<code>{module_url}</code>\n"
+                    f"────────────────────────"
+                )
+                btn_open = "🌐 Truy cập Link"
+                btn_copy = "📋 Sao chép Link"
+
+            keyboard = [
+                [
+                    InlineKeyboardButton(text=btn_open, url=module_url),
+                    InlineKeyboardButton(text=btn_copy, switch_inline_query_current_chat=module_url)
+                ],
+                [InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]
+            ]
         
-        txt = f"<b>{display_title}</b>\n\n"
-        txt += f"🔗 <b>{('Module Link (Tap to copy)' if lang == 'en' else 'Link Module (Chạm để copy)')}:</b>\n"
-        txt += f"<code>{res['url']}</code>"
-        
-        kb = [[InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]]
-        await u.message.reply_text(txt, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb), disable_web_page_preview=True)
+        await u.message.reply_text(
+            txt, 
+            parse_mode=ParseMode.HTML, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            disable_web_page_preview=True
+        )
         
 # --- WEB SERVER & API ---
 server = Flask(__name__)
