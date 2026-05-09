@@ -6,7 +6,8 @@ from telegram import (
     Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    BotCommand
+    BotCommand, 
+    CopyTextButton
 )
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -1084,10 +1085,16 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
             res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()    
         if not res:
             return
-        module_url = res['url']
+        raw_url = res['url']
+        if raw_url.startswith('@'):
+            final_url = f"https://t.me/{raw_url[1:]}"
+        elif not raw_url.startswith('http'):
+            final_url = f"https://t.me/{raw_url}"
+        else:
+            final_url = raw_url
         titles = res['title'].split("/")
         display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
-        if "bot" in module_url.lower():
+        if "bot" in raw_url.lower():
             if lang == 'en':
                 txt = (
                     f"🤖 <b>BOT SYSTEM</b>\n"
@@ -1107,7 +1114,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 )
                 btn_main_text = "🚀 Truy cập Bot ngay"
             keyboard = [
-                [InlineKeyboardButton(text=btn_main_text, url=module_url)],
+                [InlineKeyboardButton(text=btn_main_text, url=final_url)],
                 [InlineKeyboardButton(text=get_text('btn_show_list', lang), callback_data="show_list")]
             ]
         else:
@@ -1117,7 +1124,7 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     f"────────────────────────\n"
                     f"🚀 <b>Status:</b> <code>Active</code>\n"
                     f"📂 <b>Category:</b> Premium Module\n\n"
-                    f"🔗 <b>Direct Link:</b>\n<code>{module_url}</code>\n"
+                    f"🔗 <b>Direct Link:</b>\n<code>{final_url}</code>\n"
                     f"────────────────────────"
                 )
                 btn_open_text = "🌐 Open Link"
@@ -1128,15 +1135,18 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     f"────────────────────────\n"
                     f"🚀 <b>Trạng thái:</b> <code>Sẵn sàng</code>\n"
                     f"📂 <b>Loại:</b> Premium Module\n\n"
-                    f"🔗 <b>Liên kết trực tiếp:</b>\n<code>{module_url}</code>\n"
+                    f"🔗 <b>Liên kết trực tiếp:</b>\n<code>{final_url}</code>\n"
                     f"────────────────────────"
                 )
                 btn_open_text = "🌐 Truy cập Link"
                 btn_copy_text = "📋 Sao chép Link"
             keyboard = [
                 [
-                    InlineKeyboardButton(text=btn_open_text, url=module_url),
-                    InlineKeyboardButton(text=btn_copy_text, switch_inline_query_current_chat=module_url)
+                    InlineKeyboardButton(text=btn_open_text, url=final_url),
+                    InlineKeyboardButton(
+                        text=btn_copy_text, 
+                        copy_text=CopyTextButton(text=final_url) 
+                    )
                 ],
                 [InlineKeyboardButton(text=get_text('btn_show_list', lang), callback_data="show_list")]
             ]
