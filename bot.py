@@ -1070,28 +1070,36 @@ async def callback_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
         )
         await c.bot.send_message(chat_id=ROOT_ADMIN_ID, text=admin_txt, parse_mode=ParseMode.HTML)
 async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # 1. Kiểm tra tính hợp lệ của tin nhắn
     if not u.message or not u.message.text or not u.message.text.startswith('/'):
         return
     
+    # 2. Xử lý lấy Command (key)
     cmd = u.message.text.split()[0][1:].split('@')[0].lower()
     sys_cmds = ['start', 'profile', 'list', 'get', 'nextdns', 'donate', 'admin', 'stats', 'hdsd']
     
-    if cmd in sys_cmds: return
+    if cmd in sys_cmds: 
+        return
 
     uid = u.effective_user.id
     lang = get_lang(uid)
     
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
-        
-    if res:
+    try:
+        # 3. Truy vấn Database
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            res = conn.execute("SELECT title, url FROM modules WHERE LOWER(key) = ?", (cmd,)).fetchone()
+            
+        if not res:
+            return
+
         module_url = res['url']
         titles = res['title'].split("/")
         display_title = titles[1].strip().upper() if (lang == 'en' and len(titles) > 1) else titles[0].strip().upper()
 
-        # --- TRƯỜNG HỢP 1: NẾU LINK CÓ CHỨA TỪ "BOT" ---
+        # 4. Phân loại nội dung & Thiết lập giao diện
         if "bot" in module_url.lower():
+            # --- GIAO DIỆN CHO BOT ĐỐI TÁC ---
             if lang == 'en':
                 txt = (
                     f"🤖 <b>OFFICIAL PARTNER BOT</b>\n"
@@ -1100,24 +1108,23 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     f"📝 <b>Description:</b> This is a specialized automated system developed by our team.\n\n"
                     f"💡 <i>Click the button below to start experiencing the new features!</i>"
                 )
-                btn_main = "🚀 Launch Bot Now"
+                btn_main_text = "🚀 Launch Bot Now"
             else:
                 txt = (
                     f"🤖 <b>HỆ THỐNG BOT ĐỐI TÁC</b>\n"
                     f"────────────────────────\n"
                     f"🌟 <b>Dịch vụ:</b> {display_title}\n"
                     f"📝 <b>Mô tả:</b> Đây là hệ thống tự động hóa chuyên biệt được phát triển bởi đội ngũ của chúng tôi.\n\n"
-                    f"💡 <i>Nhấn vào nút bên dưới để bắt đầu trải nghiệm các tính năng mới ngay nhé!</i>"
+                    f"💡 <i>Nhấn vào nút bên dưới để bắt đầu trải nghiệm ngay nhé!</i>"
                 )
-                btn_main = "🚀 Truy cập Bot ngay"
+                btn_main_text = "🚀 Truy cập Bot ngay"
 
             keyboard = [
-                [InlineKeyboardButton(text=btn_main, url=module_url)],
-                [InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]
+                [InlineKeyboardButton(text=btn_main_text, url=module_url)],
+                [InlineKeyboardButton(text=get_text('btn_show_list', lang), callback_data="show_list")]
             ]
-
-        # --- TRƯỜNG HỢP 2: LINK BÌNH THƯỜNG (MODULE) ---
         else:
+            # --- GIAO DIỆN CHO MODULE CẤU HÌNH ---
             if lang == 'en':
                 txt = (
                     f"✨ <b>{display_title} CONFIGURATION</b>\n"
@@ -1127,8 +1134,8 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     f"🔗 <b>Direct Link:</b>\n<code>{module_url}</code>\n"
                     f"────────────────────────"
                 )
-                btn_open = "🌐 Open Link"
-                btn_copy = "📋 Copy Link"
+                btn_open_text = "🌐 Open Link"
+                btn_copy_text = "📋 Copy Link"
             else:
                 txt = (
                     f"✨ <b>CẤU HÌNH {display_title}</b>\n"
@@ -1138,23 +1145,28 @@ async def dynamic_module_handler(u: Update, c: ContextTypes.DEFAULT_TYPE):
                     f"🔗 <b>Liên kết trực tiếp:</b>\n<code>{module_url}</code>\n"
                     f"────────────────────────"
                 )
-                btn_open = "🌐 Truy cập Link"
-                btn_copy = "📋 Sao chép Link"
+                btn_open_text = "🌐 Truy cập Link"
+                btn_copy_text = "📋 Sao chép Link"
 
             keyboard = [
                 [
-                    InlineKeyboardButton(text=btn_open, url=module_url),
-                    InlineKeyboardButton(text=btn_copy, switch_inline_query_current_chat=module_url)
+                    InlineKeyboardButton(text=btn_open_text, url=module_url),
+                    InlineKeyboardButton(text=btn_copy_text, switch_inline_query_current_chat=module_url)
                 ],
-                [InlineKeyboardButton(get_text('btn_show_list', lang), callback_data="show_list")]
+                [InlineKeyboardButton(text=get_text('btn_show_list', lang), callback_data="show_list")]
             ]
         
+        # 5. Gửi phản hồi (Đảm bảo dùng đầy đủ tham số để tránh lỗi)
         await u.message.reply_text(
-            txt, 
-            parse_mode=ParseMode.HTML, 
-            reply_markup=InlineKeyboardMarkup(keyboard), 
+            text=txt,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(keyboard),
             disable_web_page_preview=True
         )
+
+    except Exception as e:
+        # Ghi log lỗi nếu có vấn đề phát sinh (ví dụ: link URL không hợp lệ)
+        logging.error(f"Error in dynamic_module_handler: {e}")
         
 # --- WEB SERVER & API ---
 server = Flask(__name__)
